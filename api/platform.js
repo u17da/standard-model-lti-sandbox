@@ -89,7 +89,7 @@ const LTI_HINTS = {
  */
 function validateLtiParams(params) {
     const results = [];
-    const check = (key, expected, description, hintId) => {
+    const check = (key, expected, description, hintId, isErrorOnMismatch = false) => {
         const val = params[key];
         if (!val) {
             results.push({
@@ -100,8 +100,8 @@ function validateLtiParams(params) {
             });
         } else if (expected && val !== expected) {
             results.push({
-                key, level: 'WARNING',
-                message: `[${key}] が推奨値 (${expected}) と異なります。`,
+                key, level: isErrorOnMismatch ? 'ERROR' : 'WARNING',
+                message: isErrorOnMismatch ? `[${key}] の値が不正です。` : `[${key}] が推奨値 (${expected}) と異なります。`,
                 detail: description,
                 hintId: `WRONG_${key.toUpperCase()}`
             });
@@ -114,9 +114,9 @@ function validateLtiParams(params) {
     check('login_hint', null, 'login_hint が必要です。');
     check('redirect_uri', null, 'redirect_uri (戻り先URL) が必要です。');
     check('lti_message_hint', null, 'lti_message_hint が必要です。');
-    check('scope', 'openid', 'scope=openid は必須です。', 'MISSING_SCOPE');
-    check('response_type', 'id_token', 'response_type=id_token である必要があります。');
-    check('prompt', 'none', 'prompt=none である必要があります。', 'MISSING_PROMPT');
+    check('scope', 'openid', 'scope=openid は必須です。', 'MISSING_SCOPE', true);
+    check('response_type', 'id_token', 'response_type=id_token である必要があります。', 'MISSING_RESPONSE_TYPE', true);
+    check('prompt', 'none', 'prompt=none である必要があります。', 'MISSING_PROMPT', true);
     check('nonce', null, 'セキュリティのため nonce は必須です。', 'MISSING_NONCE');
     check('state', null, '整合性確認のため state は必須です。', 'MISSING_STATE');
     check('response_mode', 'form_post', 'form_post 形式での応答が推奨されます。', 'WRONG_RESPONSE_MODE');
