@@ -927,13 +927,14 @@
             document.getElementById('step-1').classList.add('active');
             updatePhaseDescription('INIT');
 
+            // Reset log count for the new session
+            lastLogCount = 0;
+
             if (pollInterval) clearInterval(pollInterval);
 
             pollInterval = setInterval(async () => {
                 try {
-                    // Note: In real implementation, filter by session_id. 
-                    // Current mock log endpoint returns all logs, so we simple filter or just show all for demo.
-                    const res = await fetch('/api/platform/api/logs');
+                    const res = await fetch(`/api/platform/api/logs?sessionId=${sessionId}`);
                     const logs = await res.json();
 
                     if (logs.length > lastLogCount) {

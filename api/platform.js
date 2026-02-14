@@ -134,10 +134,11 @@ const PUBLIC_KEY = fs.existsSync(path.join(keyDir, 'public.pem'))
     : null;
 
 // DB Helper: Log
-async function logToDb(phase, message, data, level) {
+async function logToDb(phase, message, data, level, sessionId = null) {
     try {
         await db.collection('logs').add({
             phase, message, data, level,
+            sessionId,
             timestamp: new Date().toISOString()
         });
     } catch (e) {
@@ -146,9 +147,13 @@ async function logToDb(phase, message, data, level) {
 }
 
 // DB Helper: Get Logs
-async function getLogsFromDb() {
+async function getLogsFromDb(sessionId = null) {
     try {
-        const snapshot = await db.collection('logs').orderBy('timestamp', 'desc').limit(100).get();
+        let query = db.collection('logs');
+        if (sessionId) {
+            query = query.where('sessionId', '==', sessionId);
+        }
+        const snapshot = await query.orderBy('timestamp', 'asc').limit(100).get();
         return snapshot.docs.map(doc => doc.data());
     } catch (e) {
         console.error('Log Read Error:', e);
@@ -191,8 +196,11 @@ module.exports = async (req, res) => {
         if (method === 'POST' && pathname.endsWith('/check-jwks')) {
             return handleCheckJwks(req, res);
         }
-        if (method === 'GET' && pathname.endsWith('/api/logs')) {
-            const logs = await getLogsFromDb();
+        // Log Retrieval API with Session ID filter
+        if (pathname.endsWith('/api/logs')) {
+            const sessionId = parsedUrl.searchParams.get('sessionId');
+            const logs = await getLogsFromDb(sessionId);
+            setCommonHeaders(res);
             return res.json(logs);
         }
         if (method === 'POST' && pathname.endsWith('/issue-certificate')) {
@@ -225,7 +233,7 @@ async function handleInitiate(req, res) {
         iss: final_iss,
         login_hint: login_hint,
         target_link_uri: target_link_uri,
-        lti_message_hint: JSON.stringify({ user_id: user.id }),
+        lti_message_hint: JSON.stringify({ user_id: user.id, session_id }),
         lti_deployment_id: deployment_id,
         client_id: final_client_id,
         scope: break_scope ? 'invalid_scope' : 'openid'
@@ -238,7 +246,7 @@ async function handleInitiate(req, res) {
     await logToDb('PHASE_1_INIT', 'Platform -> Tool: OIDC Initiation Sent', {
         endpoint: initiation_url,
         params: Object.fromEntries(params)
-    }, 'INFO');
+    }, 'INFO', session_id);
 
     return res.send(`
         <html>
@@ -256,6 +264,15 @@ async function handleAuthorize(req, res, parsedUrl) {
     const params = { ...Object.fromEntries(parsedUrl.searchParams), ...req.body };
     const { state, redirect_uri, nonce, login_hint, lti_message_hint } = params;
 
+    // Extract session_id from lti_message_hint if possible
+    let session_id = null;
+    try {
+        if (lti_message_hint) {
+            const hint = JSON.parse(lti_message_hint);
+            session_id = hint.session_id;
+        }
+    } catch (e) { }
+
     // パラメータ検証
     const validationResults = validateLtiParams(params);
     const hasCriticalError = validationResults.some(r => r.level === 'ERROR');
@@ -263,7 +280,7 @@ async function handleAuthorize(req, res, parsedUrl) {
     await logToDb('PHASE_2_AUTH_REQUEST', 'Tool -> Platform: 認証要求を受け取りました。パラメータを検証中...', {
         received_params: params,
         validation_results: validationResults
-    }, hasCriticalError ? 'ERROR' : (validationResults.some(r => r.level === 'WARNING') ? 'WARNING' : 'INFO'));
+    }, hasCriticalError ? 'ERROR' : (validationResults.some(r => r.level === 'WARNING') ? 'WARNING' : 'INFO'), session_id);
 
     if (hasCriticalError) {
         return res.status(400).send(`
@@ -320,7 +337,7 @@ async function handleAuthorize(req, res, parsedUrl) {
             roles: payload['https://purl.imsglobal.org/spec/lti/claim/roles'],
             target: redirect_uri,
             client_id: params.client_id
-        }, 'SUCCESS');
+        }, 'SUCCESS', session_id);
 
         return res.send(`
             <!DOCTYPE html>
@@ -418,8 +435,10 @@ async function handleIssueCertificate(req, res) {
             created_at: new Date().toISOString()
         });
 
-        // プラットフォーム側の検証ページへリダイレクト
-        const platformVerifyUrl = '/api/platform/certificate';
+        // Resolve platform verify URL dynamically
+        const protocol = req.headers['x-forwarded-proto'] || 'http';
+        const host = req.headers.host;
+        const platformVerifyUrl = `${protocol}://${host}/api/platform/certificate`;
         return res.redirect(`${platformVerifyUrl}?id=${shortId}`);
 
     } catch (e) {
@@ -435,6 +454,9 @@ async function handleCertificate(req, res, parsedUrl) {
     const shortId = parsedUrl.searchParams.get('id');
     let token = parsedUrl.searchParams.get('token');
 
+    const protocol = req.headers['x-forwarded-proto'] || 'http';
+    const host = req.headers.host;
+
     if (!token && shortId) {
         const doc = await db.collection('certificates').doc(shortId).get();
         if (doc.exists) token = doc.data().token;
@@ -447,8 +469,8 @@ async function handleCertificate(req, res, parsedUrl) {
 
         // QRコード用のURL (IDがあればID優先で極限まで短くする)
         const verifyUrl = shortId
-            ? `${parsedUrl.origin}/api/platform/certificate/verify?id=${shortId}`
-            : `${parsedUrl.origin}/api/platform/certificate/verify?token=${token}`;
+            ? `${protocol}://${host}/api/platform/certificate/verify?id=${shortId}`
+            : `${protocol}://${host}/api/platform/certificate/verify?token=${token}`;
 
         res.send(`
             <!DOCTYPE html>
