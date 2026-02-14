@@ -81,6 +81,11 @@ const LTI_HINTS = {
         title: 'response_mode が推奨値ではありません',
         reason: 'まなびポケット等多くのポータルでは `form_post` が推奨・必須です。',
         action: '`response_mode=form_post` を指定の上、POSTリクエストで受け取れるよう実装してください。'
+    },
+    'WRONG_REDIRECT_URI': {
+        title: 'redirect_uri が許可されていません',
+        reason: 'オープンリダイレクト脆弱性を防ぐため、登録済みのツールURL以外へのリダイレクトは禁止されています。',
+        action: 'ツール設定で登録した正規の Launch URL を `redirect_uri` として指定してください。'
     }
 };
 
@@ -110,16 +115,32 @@ function validateLtiParams(params) {
         }
     };
 
-    check('client_id', null, 'client_id が必要です。', 'MISSING_CLIENT_ID');
+    // ホワイトリスト形式での登録済み情報のチェック (Step 6)
+    const REGISTERED_CLIENT_ID = 'standard-test-client';
+    // redirect_uri はツール側のエンドポイント（ドメイン + パス）を検証 (Open Redirect 対策)
+    const isValidRedirect = params.redirect_uri && params.redirect_uri.includes('/api/tool/launch');
+
+    check('client_id', REGISTERED_CLIENT_ID, '未登録の Client ID です。', 'MISSING_CLIENT_ID', true);
     check('login_hint', null, 'login_hint が必要です。');
-    check('redirect_uri', null, 'redirect_uri (戻り先URL) が必要です。');
+
+    if (!isValidRedirect && params.redirect_uri) {
+        results.push({
+            key: 'redirect_uri', level: 'ERROR',
+            message: '未許可のリダイレクト先 (redirect_uri) です。',
+            detail: 'セキュリティのため、登録済みのツールURL以外へのリダイレクトは拒否されます。',
+            hintId: 'WRONG_REDIRECT_URI'
+        });
+    } else {
+        check('redirect_uri', null, 'redirect_uri (戻り先URL) が必要です。');
+    }
+
     check('lti_message_hint', null, 'lti_message_hint が必要です。');
     check('scope', 'openid', 'scope=openid は必須です。', 'MISSING_SCOPE', true);
     check('response_type', 'id_token', 'response_type=id_token である必要があります。', 'MISSING_RESPONSE_TYPE', true);
     check('prompt', 'none', 'prompt=none である必要があります。', 'MISSING_PROMPT', true);
     check('nonce', null, 'セキュリティのため nonce は必須です。', 'MISSING_NONCE');
     check('state', null, '整合性確認のため state は必須です。', 'MISSING_STATE');
-    check('response_mode', 'form_post', 'form_post 形式での応答が推奨されます。', 'WRONG_RESPONSE_MODE');
+    check('response_mode', 'form_post', 'form_post 形式での応答が必須です。', 'WRONG_RESPONSE_MODE', true);
 
     return results;
 }
