@@ -523,9 +523,63 @@ async function handleCertificate(req, res, parsedUrl) {
                 <title>LTI Interoperability Certificate</title>
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
                 <style>
-                    :root { --connect-orange: #F39800; --gold: #D4AF37; }
-                    body { background: #FDFCF0; font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
-                    .certificate-frame { background: white; width: 800px; padding: 40px; border: 15px double var(--gold); box-shadow: 0 10px 30px rgba(0,0,0,0.1); position: relative; text-align: center; }
+                    :root { 
+                        --connect-orange: #F39800; 
+                        --gold: #D4AF37; 
+                        --mp-blue: #009fe8;
+                        --mp-blue-hover: #0087c5;
+                    }
+                    body { 
+                        background: #FDFCF0; 
+                        font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; 
+                        display: flex; 
+                        flex-direction: column;
+                        align-items: center; 
+                        min-height: 100vh; 
+                        margin: 0; 
+                        padding: 40px 20px;
+                        box-sizing: border-box;
+                    }
+                    .actions {
+                        width: 800px;
+                        display: flex;
+                        justify-content: flex-end;
+                        margin-bottom: 20px;
+                    }
+                    .btn-download {
+                        background: var(--mp-blue);
+                        color: white !important;
+                        text-decoration: none;
+                        padding: 10px 24px;
+                        border-radius: 999px;
+                        font-weight: bold;
+                        font-size: 0.95rem;
+                        box-shadow: 0 4px 12px rgba(0, 159, 232, 0.3);
+                        transition: all 0.2s;
+                        border: none;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                    }
+                    .btn-download:hover {
+                        background: var(--mp-blue-hover);
+                        transform: translateY(-1px);
+                        box-shadow: 0 6px 16px rgba(0, 159, 232, 0.4);
+                    }
+                    .btn-download:active {
+                        transform: translateY(0);
+                    }
+                    .certificate-frame { 
+                        background: white; 
+                        width: 800px; 
+                        padding: 40px; 
+                        border: 15px double var(--gold); 
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
+                        position: relative; 
+                        text-align: center; 
+                        box-sizing: border-box;
+                    }
                     .certificate-inner { border: 2px solid var(--gold); padding: 40px; height: 100%; position: relative; }
                     .certificate-inner::before { content: 'CERTIFICATE'; position: absolute; top: 0; left: 0; right: 0; font-size: 6rem; color: rgba(212, 175, 55, 0.05); letter-spacing: 0.5rem; pointer-events: none; }
                     h1 { font-size: 3.5rem; color: var(--gold); margin: 0; font-family: serif; letter-spacing: 2px; text-transform: uppercase; }
@@ -539,9 +593,29 @@ async function handleCertificate(req, res, parsedUrl) {
                     .signature { text-align: right; border-top: 1px solid #333; padding-top: 10px; min-width: 200px; }
                     .sig-label { font-size: 1rem; font-style: italic; font-family: serif; }
                     .sig-date { font-size: 0.9rem; color: #666; margin-top: 5px; }
+
+                    @media print {
+                        body { background: white; padding: 0; width: 210mm; height: 297mm; display: block; }
+                        .actions { display: none; }
+                        .certificate-frame { 
+                            box-shadow: none; 
+                            border-width: 10mm; 
+                            width: 190mm; 
+                            margin: 10mm auto;
+                            -webkit-print-color-adjust: exact;
+                        }
+                        .certificate-inner { border-width: 1pt; }
+                    }
                 </style>
             </head>
             <body>
+                <div class="actions">
+                    <button class="btn-download" onclick="window.print()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        証明書をダウンロード (PDF)
+                    </button>
+                </div>
+
                 <div class="certificate-frame">
                     <div class="certificate-inner">
                         <h1>Certificate</h1>
