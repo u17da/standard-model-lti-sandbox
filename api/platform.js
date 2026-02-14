@@ -157,19 +157,28 @@ async function logToDb(phase, message, data, level, sessionId = null) {
 // DB Helper: Get Logs
 async function getLogsFromDb(sessionId = null) {
     try {
-        // Fetch all recent logs to avoid requiring composite indexes for session filtering
-        const snapshot = await db.collection('logs').orderBy('timestamp', 'desc').limit(100).get();
+        // Fetch more logs to ensure we find the session even in busy environments
+        // Ordering by timestamp desc is built-in for single-field queries in Firestore
+        const snapshot = await db.collection('logs')
+            .orderBy('timestamp', 'desc')
+            .limit(500)
+            .get();
+
         let logs = snapshot.docs.map(doc => doc.data());
+        const totalFetched = logs.length;
 
         if (sessionId && sessionId !== 'null' && sessionId !== 'undefined') {
             logs = logs.filter(l => l.sessionId === sessionId);
         }
 
         // Return in chronological order
-        return logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        return {
+            logs: logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)),
+            debug: { sessionId, totalFetched, matchedCount: logs.length }
+        };
     } catch (e) {
         console.error('Log Read Error:', e);
-        return [];
+        return { logs: [], error: e.message };
     }
 }
 
@@ -206,11 +215,13 @@ module.exports = async (req, res) => {
 
     try {
         // Structural Route Resolution
-        // Vercel paths: /api/platform -> subpath: /
-        // Vercel paths: /api/platform/certificate -> subpath: /certificate
         const base = '/api/platform';
         let subpath = pathname.startsWith(base) ? pathname.slice(base.length) : pathname;
-        subpath = subpath.replace(/\/$/, '') || '/'; // Normalize trailing slash and empty case
+        subpath = subpath.replace(/\/$/, '') || '/';
+
+        // Additional normalization for Vercel
+        if (subpath.startsWith('/api/')) subpath = subpath.slice(4);
+        if (!subpath.startsWith('/')) subpath = '/' + subpath;
 
         const routeKey = `${method}:${subpath}`;
 
@@ -235,9 +246,9 @@ module.exports = async (req, res) => {
                 return handleCheckJwks(req, res);
 
             case 'GET:/logs':
-                const sessionId = parsedUrl.searchParams.get('sessionId');
-                const logs = await getLogsFromDb(sessionId);
-                return res.json(logs);
+                const sessionId = parsedUrl.searchParams.get('sessionId') || parsedUrl.searchParams.get('session_id');
+                const logData = await getLogsFromDb(sessionId);
+                return res.json(logData);
 
             case 'POST:/issue-certificate':
                 return await handleIssueCertificate(req, res);
@@ -265,12 +276,13 @@ module.exports = async (req, res) => {
 
 async function handleInitiate(req, res) {
     const { initiation_url, client_id, target_link_uri, login_hint: user_id, session_id, break_prompt, break_scope } = req.body;
-    const user = TEST_USERS.find(u => u.id === user_id) || TEST_USERS[0];
-
     const final_iss = 'https://standard-eportal-v5.example.com';
     const final_client_id = client_id || 'standard-test-client';
-    const login_hint = user.id;
-    const deployment_id = `S_${user.school_code}`;
+
+    // 匿名起動の判定
+    const isAnonymous = user_id === 'anonymous';
+    const login_hint = isAnonymous ? 'anonymous-hint' : user.id;
+    const deployment_id = isAnonymous ? 'S_999999999999' : `S_${user.school_code}`;
 
     const params = new URLSearchParams({
         iss: final_iss,
@@ -342,34 +354,41 @@ async function handleAuthorize(req, res, parsedUrl) {
         `);
     }
 
-    // ユーザー特定 (login_hint = uuid assumption for simplicity in V5)
-    const user = TEST_USERS.find(u => u.id === login_hint) || TEST_USERS[0];
+    // ユーザー特定
+    const isAnonymous = login_hint === 'anonymous-hint';
+    const user = isAnonymous ? null : (TEST_USERS.find(u => u.id === login_hint) || TEST_USERS[0]);
 
     const now = Math.floor(Date.now() / 1000);
     const payload = {
         iss: 'https://standard-eportal-v5.example.com',
-        sub: user.sub, // UUID v4
+        sub: isAnonymous ? 'anonymous-subject' : user.sub, // 匿名時は固定IDまたは除外を検討（ここでは固定IDとする）
         aud: params.client_id,
         iat: now,
         exp: now + 3600,
         nonce: nonce,
-        name: user.name,
         'https://purl.imsglobal.org/spec/lti/claim/message_type': 'LtiResourceLinkRequest',
         'https://purl.imsglobal.org/spec/lti/claim/version': '1.3.0',
-        'https://purl.imsglobal.org/spec/lti/claim/deployment_id': `S_${user.school_code}`,
+        'https://purl.imsglobal.org/spec/lti/claim/deployment_id': isAnonymous ? 'S_999999999999' : `S_${user.school_code}`,
         'https://purl.imsglobal.org/spec/lti/claim/target_link_uri': redirect_uri,
-        'https://purl.imsglobal.org/spec/lti/claim/resource_link': { id: 'resource-' + user.sub },
-        'https://purl.imsglobal.org/spec/lti/claim/roles': [user.role], // Full URL
+        'https://purl.imsglobal.org/spec/lti/claim/resource_link': { id: 'resource-' + (isAnonymous ? 'anonymous' : user.sub) },
+        'https://purl.imsglobal.org/spec/lti/claim/roles': isAnonymous
+            ? ['http://purl.imsglobal.org/vocab/lis/v2/institution/person#Guest']
+            : [user.role],
         'https://purl.imsglobal.org/spec/lti/claim/context': {
-            id: 'ctx-' + user.school_code,
+            id: isAnonymous ? 'ctx-anonymous' : 'ctx-' + user.school_code,
             label: 'STANDARD-CLASS',
-            title: 'Standard Verification Course',
+            title: isAnonymous ? 'Anonymous Course' : 'Standard Verification Course',
             type: ['CourseSection']
-        },
-        'https://purl.imsglobal.org/spec/lti/claim/custom': {
-            applic_grades: user.grade || ''
         }
     };
+
+    // 匿名でない場合のみ追加情報を付加
+    if (!isAnonymous) {
+        payload.name = user.name;
+        payload['https://purl.imsglobal.org/spec/lti/claim/custom'] = {
+            applic_grades: user.grade || ''
+        };
+    }
 
     try {
         if (!PRIVATE_KEY) throw new Error('Private Key not loaded');
