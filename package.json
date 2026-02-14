@@ -1,0 +1,10 @@
+{
+  "name": "standard-model-lti-sandbox",
+  "version": "1.0.0",
+  "license": "SEE LICENSE IN LICENSE",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3"
+  }
+}

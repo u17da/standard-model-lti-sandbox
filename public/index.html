@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>（非公式）相互運用標準モデル LTI接続テストツール</title>
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700&family=Noto+Sans+JP:wght@300;400;500;700&family=Fira+Code:wght@400;600&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            /* ICT CONNECT 21 Colors */
+            --ict-blue: #005BAC;
+            --connect-orange: #F39800;
+            --bg-body: #F9FAFB;
+            --bg-card: #FFFFFF;
+            --text-main: #333333;
+            --text-muted: #666666;
+            --border: #E5E7EB;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-primary: 0 4px 14px 0 rgba(0, 91, 172, 0.39);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Noto Sans JP', 'Helvetica Neue', sans-serif;
+            background: var(--bg-body);
+            color: var(--text-main);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        header {
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #FFFFFF;
+            border-bottom: 3px solid var(--ict-blue);
+            z-index: 10;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--ict-blue);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .tag-v5 {
+            font-size: 0.75rem;
+            background: var(--ict-blue);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            letter-spacing: 0.05em;
+            font-weight: 500;
+        }
+
+        /* Main Layout */
+        main {
+            flex: 1;
+            display: flex;
+            padding: 2rem;
+            gap: 2rem;
+            overflow: hidden;
+            background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        /* Card Style */
+        .glass-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: var(--shadow-card);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Left Panel */
+        .config-panel {
+            flex: 4;
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .config-section {
+            margin-bottom: 2.5rem;
+        }
+
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 1.2rem;
+            color: var(--ict-blue);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 2px solid #E5E7EB;
+            padding-bottom: 0.5rem;
+        }
+
+        .section-title::before {
+            content: '';
+            display: none;
+        }
+
+        /* Remove previous accent */
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.9rem;
+            color: var(--text-main);
+            margin-bottom: 0.5rem;
+            font-weight: 700;
+        }
+
+        input,
+        select {
+            width: 100%;
+            background: #F3F4F6;
+            border: 1px solid #D1D5DB;
+            padding: 0.8rem 1rem;
+            border-radius: 6px;
+            color: var(--text-main);
+            font-family: inherit;
+            transition: all 0.2s;
+            font-size: 0.95rem;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--ict-blue);
+            box-shadow: 0 0 0 3px rgba(0, 91, 172, 0.1);
+            background: #FFFFFF;
+        }
+
+        input[readonly] {
+            background: #E5E7EB;
+            color: var(--text-muted);
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 1rem;
+            background: var(--connect-orange);
+            border: none;
+            border-radius: 30px;
+            color: white;
+            font-weight: 700;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 10px rgba(243, 152, 0, 0.3);
+            margin-top: 1rem;
+            letter-spacing: 0.05em;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(243, 152, 0, 0.4);
+            filter: brightness(1.05);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--ict-blue);
+            border: 1px solid var(--ict-blue);
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            font-weight: 600;
+        }
+
+        .btn-secondary:hover {
+            background: #F0F9FF;
+        }
+
+        /* Tools Section */
+        .tools-box {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: #F0F9FF;
+            border-radius: 8px;
+            border: 1px solid #BAE6FD;
+        }
+
+        .tool-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .result-box {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            display: none;
+            line-height: 1.5;
+            border: 1px solid transparent;
+        }
+
+        /* Right Panel */
+        .status-panel {
+            flex: 5;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #FFFFFF;
+        }
+
+        /* Sequence Visualizer */
+        .sequence-viz {
+            padding: 2rem;
+            border-bottom: 1px solid var(--border);
+            background: #FFFFFF;
+        }
+
+        .steps {
+            display: flex;
+            justify-content: space-between;
+            position: relative;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .steps::before {
+            content: '';
+            position: absolute;
+            top: 14px;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: #E5E7EB;
+            z-index: 1;
+        }
+
+        .step {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            opacity: 1;
+            width: 120px;
+        }
+
+        .step-dot {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #FFFFFF;
+            border: 3px solid #E5E7EB;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.9rem;
+            font-weight: bold;
+            color: #9CA3AF;
+            transition: all 0.3s;
+        }
+
+        .step-label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #9CA3AF;
+            text-align: center;
+            line-height: 1.3;
+        }
+
+        .step-sub {
+            font-size: 0.75rem;
+            font-weight: normal;
+            opacity: 0.8;
+        }
+
+        .step.active .step-dot {
+            border-color: var(--connect-orange);
+            color: var(--connect-orange);
+            background: #FFF7ED;
+        }
+
+        .step.active .step-label {
+            color: var(--connect-orange);
+        }
+
+        .step.completed .step-dot {
+            background: var(--ict-blue);
+            border-color: var(--ict-blue);
+            color: white;
+        }
+
+        .step.completed .step-label {
+            color: var(--ict-blue);
+        }
+
+        .step.error .step-dot {
+            background: var(--error);
+            border-color: var(--error);
+            color: white;
+        }
+
+        .viz-description {
+            margin-top: 1.5rem;
+            text-align: center;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            background: #F3F4F6;
+            padding: 1rem;
+            border-radius: 6px;
+            border: 1px solid #E5E7EB;
+        }
+
+        /* Log Area */
+        .log-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+            background: #111827;
+            /* Keep Log Area Dark for Contrast */
+            color: #E5E7EB;
+        }
+
+        .log-entry {
+            padding: 1rem;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 4px solid #4B5563;
+        }
+
+        .log-phase {
+            color: #60A5FA;
+            font-weight: bold;
+        }
+
+        .log-time {
+            color: #9CA3AF;
+            font-size: 0.75rem;
+        }
+
+        .log-data {
+            background: #000000;
+            padding: 0.8rem;
+            border-radius: 4px;
+            color: #D1D5DB;
+            margin-top: 0.5rem;
+            border: 1px solid #374151;
+        }
+
+        .log-entry.INFO {
+            border-left-color: #3B82F6;
+        }
+
+        .log-entry.WARNING {
+            border-left-color: #F59E0B;
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .log-entry.ERROR {
+            border-left-color: #EF4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .log-entry.SUCCESS {
+            border-left-color: #10B981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        /* Diagnostic UI */
+        .badge-error {
+            background: #EF4444;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .badge-warn {
+            background: #F59E0B;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .val-list {
+            margin-top: 1rem;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #000000;
+        }
+
+        .val-item {
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            border-bottom: 1px solid #1F2937;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .val-item:last-child {
+            border-bottom: none;
+        }
+
+        .val-item.SUCCESS {
+            color: #10B981;
+            background: rgba(16, 185, 129, 0.05);
+        }
+
+        .val-item.WARNING {
+            color: #F59E0B;
+            background: rgba(245, 158, 11, 0.05);
+        }
+
+        .val-item.ERROR {
+            color: #EF4444;
+            background: rgba(239, 68, 68, 0.05);
+        }
+
+        .val-marker {
+            font-weight: bold;
+            width: 14px;
+            flex-shrink: 0;
+        }
+
+        .val-detail {
+            font-size: 0.75rem;
+            opacity: 0.7;
+            margin-top: 2px;
+        }
+
+        .hint-box {
+            margin-top: 1rem;
+            background: #FFF7ED;
+            border-left: 4px solid var(--connect-orange);
+            padding: 1rem;
+            border-radius: 4px;
+            border: 1px solid #FFEDD5;
+            color: #9A3412;
+        }
+
+        .hint-title {
+            font-weight: 800;
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .hint-reason {
+            font-size: 0.8rem;
+            margin-bottom: 0.8rem;
+            line-height: 1.5;
+            color: #C2410C;
+        }
+
+        .hint-action {
+            background: #111827;
+            color: #10B981;
+            padding: 0.8rem;
+            border-radius: 4px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8rem;
+            border: 1px solid #374151;
+        }
+
+        /* Tooltip */
+        .tooltip-container {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            margin-left: 6px;
+            vertical-align: middle;
+            cursor: pointer;
+        }
+
+        .tooltip-icon {
+            width: 16px;
+            height: 16px;
+            background: #E5E7EB;
+            color: #6B7280;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            font-style: normal;
+            transition: all 0.2s;
+        }
+
+        .tooltip-container:hover .tooltip-icon {
+            background: var(--ict-blue);
+            color: white;
+        }
+
+        .tooltip-box {
+            position: absolute;
+            bottom: calc(100% + 10px);
+            left: 50%;
+            transform: translateX(-50%) translateY(10px);
+            width: 240px;
+            padding: 12px;
+            background: #1F2937;
+            color: white;
+            font-size: 0.8rem;
+            font-weight: normal;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            visibility: hidden;
+            opacity: 0;
+            transition: all 0.2s;
+            z-index: 100;
+            line-height: 1.5;
+            pointer-events: none;
+            text-align: left;
+        }
+
+        .tooltip-box::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -6px;
+            border-width: 6px;
+            border-style: solid;
+            border-color: #1F2937 transparent transparent transparent;
+        }
+
+        .tooltip-container:hover .tooltip-box {
+            visibility: visible;
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 900px) {
+            main {
+                flex-direction: column;
+                padding: 1rem;
+            }
+
+            .config-panel,
+            .status-panel {
+                flex: none;
+                width: 100%;
+                max-height: 50vh;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <div style="display:flex; align-items:center;">
+            <h1>（非公式）相互運用標準モデル LTI接続テストツール <span class="tag-v5">Standard V5.00</span></h1>
+        </div>
+    </header>
+
+    <main>
+        <!-- Configuration Panel -->
+        <div class="glass-panel config-panel">
+            <!-- Demo Section (Optional Utility) -->
+            <div
+                style="margin-bottom: 2rem; padding: 1.5rem; border: 1px dashed var(--border); border-radius: 8px; background: #fafafa;">
+                <div
+                    style="font-size: 0.9rem; font-weight: 700; color: var(--text-muted); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 6px;">
+                    <span>🧪</span> サンプルツールでの動作デモ
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.4;">
+                    サンプルのツールを用いて、テストがどのように行われるのかを確認することができます。
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-secondary" onclick="fillSamples()"
+                        style="flex:1; font-size: 0.8rem; padding: 0.5rem;">デモ用設定値を自動入力</button>
+                    <a href="/api/tool" target="lti_tool_win" class="btn-secondary"
+                        style="text-decoration:none; text-align:center; flex:1; display:flex; align-items:center; justify-content:center; font-size: 0.8rem; padding: 0.5rem;">サンプルツールの画面を開く</a>
+                </div>
+            </div>
+
+            <form action="/api/platform/initiate" method="POST" target="lti_tool_win" onsubmit="startPolling()">
+                <input type="hidden" name="session_id" id="session_id">
+                <input type="hidden" name="iss" value="https://standard-eportal-v5.example.com">
+
+                <div class="config-section">
+                    <div class="section-title"><span>⚙️</span> 接続設定</div>
+
+                    <div class="form-group">
+                        <label>ツール名称
+                            <span class="tooltip-container">
+                                <i class="tooltip-icon">i</i>
+                                <span class="tooltip-box">接続証明書に表示されるツールの名称です。</span>
+                            </span>
+                        </label>
+                        <input type="text" id="tool_name" name="tool_name" placeholder="例: サンプルツール" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Initiation URL (Login URL)
+                            <span class="tooltip-container">
+                                <i class="tooltip-icon">i</i>
+                                <span class="tooltip-box">LTI 1.3
+                                    接続を開始するためのエンドポイント（ログイン開始URL）です。ツール側がプラットフォームからの最初のリクエストを受け取る場所です。</span>
+                            </span>
+                        </label>
+                        <input type="text" id="init_url" name="initiation_url" placeholder="https://..." required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Target Link URI (Launch URL)
+                            <span class="tooltip-container">
+                                <i class="tooltip-icon">i</i>
+                                <span class="tooltip-box">LTI 1.3
+                                    接続が完了した後に表示されるツールのメイン画面（起動URL）です。認証成功後にリダイレクトされる最終目的地です。</span>
+                            </span>
+                        </label>
+                        <input type="text" id="target_url" name="target_link_uri" placeholder="https://..." required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Client ID (Read Only)
+                            <span class="tooltip-container">
+                                <i class="tooltip-icon">i</i>
+                                <span class="tooltip-box">プラットフォーム側でツールを識別するための固有のIDです。ツール側の設定画面に入力する必要があります。</span>
+                            </span>
+                        </label>
+                        <input type="text" name="client_id" value="standard-test-client" readonly>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <div class="section-title"><span>👤</span> ユーザー選択</div>
+                    <div class="form-group">
+                        <label>テストユーザー（役割・氏名・学年）</label>
+                        <select name="login_hint">
+                            <optgroup label="教員">
+                                <option value="teacher_01" selected>佐藤 太郎 (教員)</option>
+                                <option value="teacher_02">鈴木 花子 (教員)</option>
+                            </optgroup>
+                            <optgroup label="児童・生徒">
+                                <option value="student_p6">伊藤 健太 (小学6年生・P6)</option>
+                                <option value="student_j2">小林 大輔 (中学2年生・J2)</option>
+                                <option value="student_h3">佐々木 拓海 (高校3年生・H3)</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                </div>
+
+                <div
+                    style="margin-top: 2rem; padding: 1.2rem; border: 1px dashed var(--border); border-radius: 8px; background: #fafafa;">
+                    <div
+                        style="font-size: 0.95rem; font-weight: 700; color: var(--ict-blue); margin-bottom: 0.8rem; display: flex; align-items: center; gap: 8px;">
+                        <span>🛡️</span> 意図的なエラー (デバッグ用)
+                        <span class="tooltip-container">
+                            <i class="tooltip-icon">i</i>
+                            <span class="tooltip-box">LTI 1.3
+                                仕様不適合時の挙動を確認するためのオプション機能です。チェックを入れると意図的に不正なリクエストを送信します。</span>
+                        </span>
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.4;">
+                        接続先ツールが仕様違反を適切に検知・処理できるかのテストに使用します。
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <label
+                            style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:normal; font-size: 0.85rem;">
+                            <input type="checkbox" name="break_prompt" value="1" style="width:auto;"> prompt=none を含めない
+                        </label>
+                        <label
+                            style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:normal; font-size: 0.85rem;">
+                            <input type="checkbox" name="break_scope" value="1" style="width:auto;"> scope を不正にする
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-primary">ツールを起動</button>
+
+                <!-- Platform Information for Tool Developers -->
+                <div
+                    style="margin-top: 1.5rem; padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+                    <div
+                        style="font-size: 0.8rem; font-weight: 700; color: var(--ict-blue); margin-bottom: 0.5rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.3rem;">
+                        ℹ️ ツール側で確認・設定が必要な情報
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.6;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 2px;">
+                            <span>Issuer (iss):</span>
+                            <code style="color:var(--ict-blue)">https://standard-eportal-v5.example.com</code>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 2px;">
+                            <span>Client ID:</span>
+                            <code style="color:var(--ict-blue)">standard-test-client</code>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 2px;">
+                            <span>Deployment ID:</span>
+                            <code style="color:var(--ict-blue)">S_131010000001</code>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span>OIDC Auth Endpoint:</span>
+                            <code style="color:var(--ict-blue)">/api/platform/oauth/authorize</code>
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+            <!-- Tools Section -->
+            <div class="tools-box">
+                <div class="section-title" style="margin-bottom:0.5rem; font-size:0.9rem;">🛠️ 診断ツール: JWKS Check
+                    <span class="tooltip-container">
+                        <i class="tooltip-icon">i</i>
+                        <span class="tooltip-box">ツール側が公開している公開鍵情報（JWKS）が正しく取得・解析できるかを確認します。LTI 1.3
+                            の署名検証に必須の項目です。</span>
+                    </span>
+                </div>
+                <div class="tool-row">
+                    <input type="text" id="jwks_uri" placeholder="https://.../jwks" style="font-size:0.85rem;">
+                    <button class="btn-secondary" onclick="checkJwks()" style="white-space:nowrap;">確認</button>
+                </div>
+                <div id="jwks_result" class="result-box"></div>
+            </div>
+
+        </div>
+
+        <!-- Status Panel -->
+        <div class="glass-panel status-panel">
+            <!-- Sequence Visualizer -->
+            <div class="sequence-viz">
+                <div class="steps">
+                    <div class="step" id="step-1">
+                        <div class="step-dot">1</div>
+                        <div class="step-label">起動<br><span class="step-sub">Initiation</span></div>
+                    </div>
+                    <div class="step" id="step-2">
+                        <div class="step-dot">2</div>
+                        <div class="step-label">認証要求<br><span class="step-sub">Auth Request</span></div>
+                    </div>
+                    <div class="step" id="step-3">
+                        <div class="step-dot">3</div>
+                        <div class="step-label">接続<br><span class="step-sub">LTI Launch</span></div>
+                    </div>
+                </div>
+                <div id="phase-desc" class="viz-description">
+                    LTI Launch 待機中...
+                </div>
+            </div>
+
+            <!-- Log Area -->
+            <div class="log-area" id="log-container">
+                <div style="text-align:center; color: var(--text-muted); margin-top: 3rem;">
+                    <div style="font-size: 2rem; margin-bottom: 1rem;">📡</div>
+                    Waiting for LTI Sequence...
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // LTI Hints Knowledge Base (Sync with Backend)
+        const LTI_HINTS = {
+            'MISSING_PROMPT': {
+                title: 'prompt パラメータがありません',
+                reason: '学習eポータル標準では、サイレントログインを実現するために prompt=none が必須です。',
+                action: '認証リクエストのURLパラメータに `prompt=none` を追加してください。'
+            },
+            'WRONG_PROMPT': {
+                title: 'prompt 値が正しくありません',
+                reason: '標準仕様では prompt は "none" 固定です。',
+                action: '`prompt=login` や空文字ではなく、必ず `prompt=none` を指定してください。'
+            },
+            'MISSING_CLIENT_ID': {
+                title: 'client_id がありません',
+                reason: '有効なツールとして識別するために Client ID は必須です。',
+                action: 'プラットフォーム画面で発行された `standard-test-client` を指定してください。'
+            },
+            'MISSING_SCOPE': {
+                title: 'scope が不適切です',
+                reason: 'LTI 1.3 認証フローでは scope=openid が必須です。',
+                action: 'パラメータに `scope=openid` を含めてください。'
+            },
+            'WRONG_SCOPE': {
+                title: 'scope 値が正しくありません',
+                reason: 'LTI 1.3 認証リクエストでは scope は "openid" である必要があります。',
+                action: '`scope=openid` を指定してください。'
+            },
+            'WRONG_RESPONSE_TYPE': {
+                title: 'response_type が正しくありません',
+                reason: 'LTI 1.3 では response_type=id_token が必須です。',
+                action: '`response_type=id_token` を指定してください。'
+            },
+            'MISSING_NONCE': {
+                title: 'nonce がありません',
+                reason: 'リプレイ攻撃防止のため、ランダムな文字列（nonce）の送信が必須です。',
+                action: 'ツール側でセッションごとにユニークな `nonce` を生成し設定してください。'
+            },
+            'MISSING_STATE': {
+                title: 'state がありません',
+                reason: 'セッション整合性を保つための state パラメータが必須です。',
+                action: 'ツール側で生成した `state` パラメータを含めてください。'
+            },
+            'MISSING_LOGIN_HINT': {
+                title: 'login_hint がありません',
+                reason: 'LTI ログインフロー（OIDC Auth Response）では、ユーザーを特定するための login_hint が必須です。',
+                action: 'ツール起動時に渡された `login_hint` をそのまま認証リクエストに含めてください。'
+            },
+            'MISSING_REDIRECT_URI': {
+                title: 'redirect_uri がありません',
+                reason: '認証完了後の戻り先（Launch URL）を指定する必要があります。',
+                action: 'ツール側の起動エンドポイント（target_link_uri）を `redirect_uri` として指定してください。'
+            },
+            'MISSING_LTI_MESSAGE_HINT': {
+                title: 'lti_message_hint がありません',
+                reason: '学習eポータルとのセッション維持のために必須です。',
+                action: 'ツール起動時に渡された `lti_message_hint` をそのまま認証リクエストに含めてください。'
+            },
+            'MISSING_RESPONSE_TYPE': {
+                title: 'response_type がありません',
+                reason: 'LTI 1.3 では response_type=id_token が必須です。',
+                action: 'パラメータに `response_type=id_token` を含めてください。'
+            },
+            'MISSING_RESPONSE_MODE': {
+                title: 'response_mode がありません',
+                reason: 'まなびポケット等のポータルでは、セキュリティのため `form_post` 指定が必須です。',
+                action: 'パラメータに `response_mode=form_post` を含めてください。'
+            },
+            'WRONG_RESPONSE_MODE': {
+                title: 'response_mode が推奨値ではありません',
+                reason: 'まなびポケット等多くのポータルでは `form_post` が推奨・必須です。',
+                action: '`response_mode=form_post` を指定の上、POSTリクエストで受け取れるよう実装してください。'
+            }
+        };
+
+        // Session Management
+        const sessionId = crypto.randomUUID();
+        document.getElementById('session_id').value = sessionId;
+
+        function fillSamples() {
+            document.getElementById('tool_name').value = 'サンプルツール';
+            document.getElementById('init_url').value = 'http://localhost:4000/api/tool/initiate';
+            document.getElementById('target_url').value = 'http://localhost:4000/api/tool/launch';
+            document.getElementById('jwks_uri').value = 'http://localhost:4000/api/tool/jwks';
+        }
+
+        // JWKS Checker
+        async function checkJwks() {
+            const uri = document.getElementById('jwks_uri').value;
+            const resBox = document.getElementById('jwks_result');
+
+            if (!uri) return alert('JWKS URIを入力してください');
+
+            resBox.style.display = 'block';
+            resBox.innerText = 'Checking...';
+            resBox.style.background = 'rgba(255,255,255,0.1)';
+            resBox.style.color = '#666';
+
+            try {
+                const res = await fetch('/api/platform/check-jwks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jwks_uri: uri })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    resBox.style.background = '#ECFDF5';
+                    resBox.style.color = '#10B981';
+                    resBox.innerHTML = `<strong>OK:</strong> ${data.message}<br><small>${data.detail}</small>`;
+                } else {
+                    resBox.style.background = '#FEF2F2';
+                    resBox.style.color = '#EF4444';
+                    resBox.innerHTML = `<strong>Error:</strong> ${data.message}<br><small>${data.detail}</small>`;
+                }
+            } catch (e) {
+                resBox.innerText = 'Error: ' + e.message;
+            }
+        }
+
+        // Log Polling & Sequence Update
+        let pollInterval;
+        let lastLogCount = 0;
+
+        function startPolling() {
+            // Reset UI
+            const container = document.getElementById('log-container');
+            if (container.innerText.includes('Waiting')) container.innerHTML = '';
+
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('active', 'completed', 'error'));
+            document.getElementById('step-1').classList.add('active');
+            updatePhaseDescription('INIT');
+
+            if (pollInterval) clearInterval(pollInterval);
+
+            pollInterval = setInterval(async () => {
+                try {
+                    // Note: In real implementation, filter by session_id. 
+                    // Current mock log endpoint returns all logs, so we simple filter or just show all for demo.
+                    const res = await fetch('/api/platform/api/logs');
+                    const logs = await res.json();
+
+                    if (logs.length > lastLogCount) {
+                        renderLogs(logs.slice(lastLogCount));
+                        lastLogCount = logs.length;
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }, 1000);
+        }
+
+        const PHASE_DESC = {
+            'INIT': '① 起動リクエストを送信中... (Platform -> Tool)',
+            'AUTH': '② ツールからの認証リクエストを検証中... (Tool -> Platform)',
+            'LAUNCH': '③ 認証成功。ID Tokenを発行してツールへ接続します。',
+            'ERROR': '❌ エラーが発生しました。ログを確認してください。'
+        };
+
+        function updatePhaseDescription(phaseKey) {
+            const descBox = document.getElementById('phase-desc');
+            descBox.innerText = PHASE_DESC[phaseKey] || '処理中...';
+            // Apply error styling to description box if needed
+            if (phaseKey === 'ERROR') {
+                descBox.style.background = '#FEF2F2';
+                descBox.style.color = '#EF4444';
+                descBox.style.borderColor = '#FECACA';
+            } else {
+                descBox.style.background = '#F3F4F6';
+                descBox.style.color = 'var(--text-muted)';
+                descBox.style.borderColor = '#E5E7EB';
+            }
+        }
+
+        function renderLogs(newLogs) {
+            const container = document.getElementById('log-container');
+
+            newLogs.forEach(log => {
+                // Determine Level
+                const isError = log.level === 'ERROR';
+                const isWarning = log.level === 'WARNING';
+
+                // Update Sequence Visualizer states
+                if (log.phase === 'PHASE_1_INIT') {
+                    const s1 = document.getElementById('step-1');
+                    if (isError) {
+                        s1.classList.add('error');
+                        updatePhaseDescription('ERROR');
+                    } else {
+                        s1.classList.add('completed');
+                        document.getElementById('step-2').classList.add('active');
+                        updatePhaseDescription('AUTH');
+                    }
+                }
+                if (log.phase === 'PHASE_2_AUTH_REQUEST') {
+                    const s2 = document.getElementById('step-2');
+                    if (isError) {
+                        s2.classList.add('error');
+                        updatePhaseDescription('ERROR');
+                    } else {
+                        s2.classList.add('completed');
+                        document.getElementById('step-3').classList.add('active');
+                        updatePhaseDescription('LAUNCH');
+                    }
+                }
+                if (log.phase === 'PHASE_3_LAUNCH') {
+                    const s3 = document.getElementById('step-3');
+                    if (isError) {
+                        s3.classList.add('error');
+                        updatePhaseDescription('ERROR');
+                    } else {
+                        s3.classList.add('completed');
+                        updatePhaseDescription('LAUNCH');
+                    }
+                }
+
+                // Append Log Entry
+                const div = document.createElement('div');
+                div.className = `log-entry ${log.level}`;
+
+                // Badges
+                let badges = '';
+                if (isError) badges = '<span class="badge-error">STOPPED / ERROR</span>';
+                if (isWarning) badges = '<span class="badge-warn">WARNING</span>';
+
+                // Validation List
+                let validationHtml = '';
+                let hintIds = [];
+                if (log.data && log.data.validation_results) {
+                    validationHtml = '<div class="val-list">';
+                    log.data.validation_results.forEach(res => {
+                        const icon = res.level === 'SUCCESS' ? '✓' : (res.level === 'WARNING' ? '⚠' : '✖');
+                        validationHtml += `
+                            <div class="val-item ${res.level}">
+                                <div class="val-marker">${icon}</div>
+                                <div style="flex:1;">
+                                    <div>${res.message}</div>
+                                    ${res.detail ? `<div class="val-detail">${res.detail}</div>` : ''}
+                                </div>
+                            </div>
+                        `;
+                        if (res.hintId) hintIds.push(res.hintId);
+                    });
+                    validationHtml += '</div>';
+                }
+
+                // Hint Boxes
+                let hintHtml = '';
+                [...new Set(hintIds)].forEach(hid => {
+                    const hint = LTI_HINTS[hid];
+                    if (hint) {
+                        hintHtml += `
+                            <div class="hint-box">
+                                <div class="hint-title">💡 解決策のヒント: ${hint.title}</div>
+                                <div class="hint-reason">${hint.reason}</div>
+                                <div class="hint-action">対策: ${hint.action}</div>
+                            </div>
+                        `;
+                    }
+                });
+
+                // Raw Data (if no validation)
+                let detailHtml = '';
+                if (log.data && !log.data.validation_results) {
+                    detailHtml = `<pre class="log-data">${JSON.stringify(log.data, null, 2)}</pre>`;
+                }
+
+                // Certificate Issue Button (Platform Side) - Only on Success Launch
+                let certHtml = '';
+                if (log.phase === 'PHASE_3_LAUNCH' && log.level === 'SUCCESS') {
+                    certHtml = `
+                        <div style="margin-top: 1rem; padding: 1rem; background: rgba(243, 152, 0, 0.1); border-radius: 6px; border: 1px dashed var(--connect-orange); text-align: center;">
+                            <form action="/api/platform/issue-certificate" method="POST" target="_blank">
+                                <input type="hidden" name="user_id" value="${log.data.sub}">
+                                <input type="hidden" name="client_id" value="${log.data.client_id || ''}">
+                                <input type="hidden" name="tool_url" value="${log.data.target || ''}">
+                                <input type="hidden" name="tool_name" value="${document.getElementById('tool_name').value}">
+                                <p style="font-size: 0.8rem; margin-bottom: 0.8rem; color: #E5E7EB;">LTI接続に成功しました。接続証明書をプラットフォーム側で発行できます。</p>
+                                <button type="submit" class="btn-primary" style="margin-top:0; padding: 0.6rem 1.2rem; font-size: 0.9rem; width: auto;">🏅 接続証明書を発行する</button>
+                            </form>
+                        </div>
+                    `;
+                }
+
+                div.innerHTML = `
+                    <div class="log-phase">
+                        <span>${log.phase} ${badges}</span>
+                        <span class="log-time">${new Date(log.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    <div class="log-msg">${log.message}</div>
+                    ${validationHtml}
+                    ${hintHtml}
+                    ${detailHtml}
+                    ${certHtml}
+                `;
+                container.appendChild(div);
+                container.scrollTop = container.scrollHeight;
+            });
+        }
+    </script>
+</body>
+
+</html>
