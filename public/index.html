@@ -937,7 +937,7 @@
 
             pollInterval = setInterval(async () => {
                 try {
-                    const res = await fetch(`/api/platform/api/logs?sessionId=${sessionId}`);
+                    const res = await fetch(`/api/platform/logs?sessionId=${sessionId}`);
                     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                     const logs = await res.json();
 

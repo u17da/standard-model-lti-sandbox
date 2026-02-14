@@ -234,7 +234,7 @@ module.exports = async (req, res) => {
             case 'POST:/check-jwks':
                 return handleCheckJwks(req, res);
 
-            case 'GET:/api/logs':
+            case 'GET:/logs':
                 const sessionId = parsedUrl.searchParams.get('sessionId');
                 const logs = await getLogsFromDb(sessionId);
                 return res.json(logs);
