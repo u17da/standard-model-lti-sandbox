@@ -7,7 +7,21 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const admin = require('firebase-admin');
 const { TEST_USERS } = require('../src/users');
+
+// Initialize Firebase Admin
+try {
+    const serviceAccount = require('../service-account.json');
+    if (!admin.apps.length) {
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+    }
+} catch (e) {
+    console.error('Firebase Init Error:', e);
+}
+const db = admin.firestore();
 
 // LTI Hints Knowledge Base
 const LTI_HINTS = {
@@ -132,10 +146,28 @@ const PUBLIC_KEY = fs.existsSync(path.join(keyDir, 'public.pem'))
     ? fs.readFileSync(path.join(keyDir, 'public.pem'), 'utf8')
     : null;
 
-// ログおよび証明書キャッシュ (Hot Reload対策: globalスコープを使用)
-global.ltiLogs = global.ltiLogs || [];
-global.certCache = global.certCache || {}; // 短縮ID -> トークン
-const logs = global.ltiLogs;
+// DB Helper: Log
+async function logToDb(phase, message, data, level) {
+    try {
+        await db.collection('logs').add({
+            phase, message, data, level,
+            timestamp: new Date().toISOString()
+        });
+    } catch (e) {
+        console.error('Log Write Error:', e);
+    }
+}
+
+// DB Helper: Get Logs
+async function getLogsFromDb() {
+    try {
+        const snapshot = await db.collection('logs').orderBy('timestamp', 'desc').limit(100).get();
+        return snapshot.docs.map(doc => doc.data());
+    } catch (e) {
+        console.error('Log Read Error:', e);
+        return [];
+    }
+}
 
 // 共通ヘッダー設定
 function setCommonHeaders(res) {
@@ -173,16 +205,17 @@ module.exports = async (req, res) => {
             return handleCheckJwks(req, res);
         }
         if (method === 'GET' && pathname.endsWith('/api/logs')) {
-            return res.json(global.ltiLogs);
+            const logs = await getLogsFromDb();
+            return res.json(logs);
         }
         if (method === 'POST' && pathname.endsWith('/issue-certificate')) {
             return await handleIssueCertificate(req, res);
         }
         if (method === 'GET' && pathname.endsWith('/certificate')) {
-            return handleCertificate(req, res, parsedUrl);
+            return await handleCertificate(req, res, parsedUrl);
         }
         if (method === 'GET' && pathname.endsWith('/certificate/verify')) {
-            return handleCertificateVerify(req, res, parsedUrl);
+            return await handleCertificateVerify(req, res, parsedUrl);
         }
 
         return res.status(404).json({ error: 'Endpoint Not Found', path: pathname });
@@ -215,16 +248,10 @@ async function handleInitiate(req, res) {
         params.set('prompt', 'none');
     }
 
-    global.ltiLogs.push({
-        phase: 'PHASE_1_INIT',
-        message: 'Platform -> Tool: OIDC Initiation Sent',
-        data: {
-            endpoint: initiation_url,
-            params: Object.fromEntries(params)
-        },
-        level: 'INFO',
-        timestamp: new Date().toISOString()
-    });
+    await logToDb('PHASE_1_INIT', 'Platform -> Tool: OIDC Initiation Sent', {
+        endpoint: initiation_url,
+        params: Object.fromEntries(params)
+    }, 'INFO');
 
     return res.send(`
         <html>
@@ -246,16 +273,10 @@ async function handleAuthorize(req, res, parsedUrl) {
     const validationResults = validateLtiParams(params);
     const hasCriticalError = validationResults.some(r => r.level === 'ERROR');
 
-    global.ltiLogs.push({
-        phase: 'PHASE_2_AUTH_REQUEST',
-        message: 'Tool -> Platform: 認証要求を受け取りました。パラメータを検証中...',
-        data: {
-            received_params: params,
-            validation_results: validationResults
-        },
-        level: hasCriticalError ? 'ERROR' : (validationResults.some(r => r.level === 'WARNING') ? 'WARNING' : 'INFO'),
-        timestamp: new Date().toISOString()
-    });
+    await logToDb('PHASE_2_AUTH_REQUEST', 'Tool -> Platform: 認証要求を受け取りました。パラメータを検証中...', {
+        received_params: params,
+        validation_results: validationResults
+    }, hasCriticalError ? 'ERROR' : (validationResults.some(r => r.level === 'WARNING') ? 'WARNING' : 'INFO'));
 
     if (hasCriticalError) {
         return res.status(400).send(`
@@ -307,18 +328,12 @@ async function handleAuthorize(req, res, parsedUrl) {
         if (!PRIVATE_KEY) throw new Error('Private Key not loaded');
         const idToken = jwt.sign(payload, PRIVATE_KEY, { algorithm: 'RS256', keyid: 'key-1' });
 
-        global.ltiLogs.push({
-            phase: 'PHASE_3_LAUNCH',
-            message: 'Platform -> Tool: LTI Launch (ID Token Issued)',
-            data: {
-                sub: payload.sub,
-                roles: payload['https://purl.imsglobal.org/spec/lti/claim/roles'],
-                target: redirect_uri,
-                client_id: params.client_id
-            },
-            level: 'SUCCESS',
-            timestamp: new Date().toISOString()
-        });
+        await logToDb('PHASE_3_LAUNCH', 'Platform -> Tool: LTI Launch (ID Token Issued)', {
+            sub: payload.sub,
+            roles: payload['https://purl.imsglobal.org/spec/lti/claim/roles'],
+            target: redirect_uri,
+            client_id: params.client_id
+        }, 'SUCCESS');
 
         return res.send(`
             <!DOCTYPE html>
@@ -333,13 +348,7 @@ async function handleAuthorize(req, res, parsedUrl) {
         `);
     } catch (e) {
         console.error('Sign Error', e);
-        global.ltiLogs.push({
-            phase: 'ERROR',
-            message: 'Token Generation Failed',
-            data: { error: e.message },
-            level: 'ERROR',
-            timestamp: new Date().toISOString()
-        });
+        await logToDb('ERROR', 'Token Generation Failed', { error: e.message }, 'ERROR');
         return res.status(500).send('Internal Server Error: ' + e.message);
     }
 }
@@ -417,7 +426,10 @@ async function handleIssueCertificate(req, res) {
 
         // 短縮IDの生成とキャッシュ保存 (感度向上のための短縮URL用)
         const shortId = Math.random().toString(36).substr(2, 8).toUpperCase();
-        global.certCache[shortId] = certToken;
+        await db.collection('certificates').doc(shortId).set({
+            token: certToken,
+            created_at: new Date().toISOString()
+        });
 
         // プラットフォーム側の検証ページへリダイレクト
         const platformVerifyUrl = '/api/platform/certificate';
@@ -432,9 +444,14 @@ async function handleIssueCertificate(req, res) {
 /**
  * 証明書表示画面 (Platform Hosting)
  */
-function handleCertificate(req, res, parsedUrl) {
+async function handleCertificate(req, res, parsedUrl) {
     const shortId = parsedUrl.searchParams.get('id');
-    const token = parsedUrl.searchParams.get('token') || global.certCache[shortId];
+    let token = parsedUrl.searchParams.get('token');
+
+    if (!token && shortId) {
+        const doc = await db.collection('certificates').doc(shortId).get();
+        if (doc.exists) token = doc.data().token;
+    }
 
     if (!token) return res.status(400).send('Certificate not found or expired');
 
@@ -527,9 +544,14 @@ function handleCertificate(req, res, parsedUrl) {
 /**
  * 証明書検証エンドポイント (Platform Hosting)
  */
-function handleCertificateVerify(req, res, parsedUrl) {
+async function handleCertificateVerify(req, res, parsedUrl) {
     const shortId = parsedUrl.searchParams.get('id');
-    const token = parsedUrl.searchParams.get('token') || global.certCache[shortId];
+    let token = parsedUrl.searchParams.get('token');
+
+    if (!token && shortId) {
+        const doc = await db.collection('certificates').doc(shortId).get();
+        if (doc.exists) token = doc.data().token;
+    }
 
     const styleValid = 'background: #ecfdf5; border: 2px solid #10b981; color: #064e3b;';
     const styleInvalid = 'background: #fef2f2; border: 2px solid #ef4444; color: #7f1d1d;';
