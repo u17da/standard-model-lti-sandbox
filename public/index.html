@@ -873,10 +873,11 @@
         document.getElementById('session_id').value = sessionId;
 
         function fillSamples() {
-            document.getElementById('tool_name').value = 'サンプルツール';
-            document.getElementById('init_url').value = 'http://localhost:4000/api/tool/initiate';
-            document.getElementById('target_url').value = 'http://localhost:4000/api/tool/launch';
-            document.getElementById('jwks_uri').value = 'http://localhost:4000/api/tool/jwks';
+            const origin = window.location.origin;
+            document.getElementById('tool_name').value = '（非公式）相互運用標準モデル LTIテストシステム';
+            document.getElementById('init_url').value = `${origin}/api/tool/initiate`;
+            document.getElementById('target_url').value = `${origin}/api/tool/launch`;
+            document.getElementById('jwks_uri').value = `${origin}/api/tool/jwks`;
         }
 
         // JWKS Checker
