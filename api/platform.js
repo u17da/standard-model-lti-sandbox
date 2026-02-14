@@ -7,21 +7,8 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const admin = require('firebase-admin');
+const { db } = require('../src/firebase-admin');
 const { TEST_USERS } = require('../src/users');
-
-// Initialize Firebase Admin
-try {
-    const serviceAccount = require('../service-account.json');
-    if (!admin.apps.length) {
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
-        });
-    }
-} catch (e) {
-    console.error('Firebase Init Error:', e);
-}
-const db = admin.firestore();
 
 // LTI Hints Knowledge Base
 const LTI_HINTS = {
