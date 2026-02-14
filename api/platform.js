@@ -404,8 +404,13 @@ async function handleAuthorize(req, res, parsedUrl) {
     // 匿名でない場合のみ追加情報を付加
     if (!isAnonymous) {
         payload.name = user.name;
+        payload.given_name = user.name.split(' ')[1] || '';
+        payload.family_name = user.name.split(' ')[0] || '';
+
+        // 学年情報を名前空間付きのカスタムクレームとして整理 (Step 5)
         payload['https://purl.imsglobal.org/spec/lti/claim/custom'] = {
-            applic_grades: user.grade || ''
+            'https://standard.ictconnect21.jp/claim/grade_code': user.grade || '',
+            'https://standard.ictconnect21.jp/claim/school_name': '標準接続テスト校'
         };
     }
 

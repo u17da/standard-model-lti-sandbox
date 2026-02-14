@@ -210,8 +210,16 @@ async function handleToolLaunch(req, res) {
     else if (roleList.some(r => r.includes('Guest'))) roleLabel = 'ゲストユーザー';
 
     const custom = claims['https://purl.imsglobal.org/spec/lti/claim/custom'] || {};
-    const grade = custom.applic_grades || '(未設定)';
+    const grade = custom['https://standard.ictconnect21.jp/claim/grade_code'] || custom.applic_grades || '(未設定)';
+    const schoolName = custom['https://standard.ictconnect21.jp/claim/school_name'] || '不明な学校';
     const deployId = claims['https://purl.imsglobal.org/spec/lti/claim/deployment_id'] || '-';
+
+    // 学年に応じたメッセージの生成 (Step 5)
+    let gradeMessage = '標準モデルでの接続テストへようこそ！';
+    if (grade.startsWith('P')) gradeMessage = '小学生のみなさん、いっしょに楽しく勉強しましょう！';
+    else if (grade.startsWith('J')) gradeMessage = '中学生のみなさん、目標に向かってがんばりましょう！';
+    else if (grade.startsWith('H')) gradeMessage = '高校生のみなさん、自分の夢をかなえるためにがんばりましょう！';
+    else if (grade === 'anonymous-subject') gradeMessage = 'ゲストユーザーとしてログイン中です。';
 
     // 匿名起動の判定
     const isAnonymous = claims.sub === 'anonymous-subject';
@@ -282,11 +290,16 @@ async function handleToolLaunch(req, res) {
                 </div>
                 
                 <div class="content">
+                    <!-- パーソナライズされたメッセージ (Step 5) -->
+                    <div style="background: #FFF7ED; border-left: 4px solid var(--connect-orange); padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; color: #9A3412; font-weight: 500;">
+                        ${gradeMessage}
+                    </div>
+
                     <div class="info-grid">
                         <div class="info-item"><span class="info-label">Name</span><span class="info-value">${userName}</span></div>
+                        <div class="info-item"><span class="info-label">School</span><span class="info-value">${schoolName}</span></div>
+                        <div class="info-item"><span class="info-label">Grade Code</span><span class="info-value">${grade}</span></div>
                         <div class="info-item"><span class="info-label">Role</span><span class="info-value">${roleLabel}</span></div>
-                        <div class="info-item"><span class="info-label">Grade (Custom)</span><span class="info-value">${grade}</span></div>
-                        <div class="info-item"><span class="info-label">Deployment ID</span><span class="info-value">${deployId}</span></div>
                     </div>
 
                     <div class="tabs">
