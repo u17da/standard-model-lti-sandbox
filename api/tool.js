@@ -4,6 +4,7 @@
  */
 
 const jwt = require('jsonwebtoken');
+const jwksClient = require('jwks-rsa');
 const fs = require('fs');
 const path = require('path');
 
@@ -21,6 +22,22 @@ const TOOL_PUBLIC_KEY = process.env.LTI_PUBLIC_KEY
     : (fs.existsSync(path.join(keyDir, 'public.pem'))
         ? fs.readFileSync(path.join(keyDir, 'public.pem'), 'utf8')
         : null);
+
+// JWKS Clientの初期化 (後ほどダイナミックにURIを設定する)
+let client = null;
+function getJwksClient(req) {
+    if (client) return client;
+    const protocol = req.headers['x-forwarded-proto'] || 'http';
+    const host = req.headers.host;
+    const jwksUri = `${protocol}://${host}/api/platform/jwks`;
+
+    client = jwksClient({
+        jwksUri: jwksUri,
+        cache: true,
+        rateLimit: true
+    });
+    return client;
+}
 
 module.exports = async (req, res) => {
     const { method, url } = req;
@@ -100,6 +117,15 @@ async function handleToolInitiate(req, res) {
     const host = req.headers.host;
     const platformAuthUrl = `${protocol}://${host}/api/platform/oauth/authorize`;
 
+    const state = 'random-state-' + Date.now();
+    const nonce = 'random-nonce-' + Date.now();
+
+    // Cookie の設定 (Step 4: CSRF/Replay対策)
+    res.setHeader('Set-Cookie', [
+        `lti_nonce=${nonce}; Path=/; HttpOnly; SameSite=Lax`,
+        `lti_state=${state}; Path=/; HttpOnly; SameSite=Lax`
+    ]);
+
     const params = new URLSearchParams({
         response_type: 'id_token',
         scope: req.body.scope || 'openid',
@@ -108,8 +134,8 @@ async function handleToolInitiate(req, res) {
         redirect_uri: target_link_uri,
         login_hint: login_hint,
         lti_message_hint: lti_message_hint,
-        state: 'random-state-' + Date.now(),
-        nonce: 'random-nonce-' + Date.now()
+        state: state,
+        nonce: nonce
     });
 
     if (req.body.prompt) {
@@ -131,20 +157,65 @@ async function handleToolLaunch(req, res) {
         return res.status(400).send('Error: Missing id_token');
     }
 
-    // ID Token のデコード
-    const decoded = jwt.decode(id_token, { complete: true });
-    const claims = decoded.payload;
+    // Nonce/State の検証 (Step 4)
+    const cookies = req.headers.cookie ? Object.fromEntries(req.headers.cookie.split('; ').map(c => c.split('='))) : {};
+    const savedNonce = cookies.lti_nonce;
+    const savedState = cookies.lti_state;
+
+    if (!state || state !== savedState) {
+        console.error('[State mismatch]', { received: state, saved: savedState });
+        return res.status(403).send('Error: State mismatch (CSRF detected)');
+    }
+
+    // ID Token の検証
+    let payload;
+    try {
+        const jwks = getJwksClient(req);
+        const getKey = (header, callback) => {
+            jwks.getSigningKey(header.kid, (err, key) => {
+                if (err) return callback(err);
+                const signingKey = key.getPublicKey();
+                callback(null, signingKey);
+            });
+        };
+
+        payload = await new Promise((resolve, reject) => {
+            jwt.verify(id_token, getKey, {
+                issuer: 'https://standard-eportal-v5.example.com',
+                audience: 'standard-test-client',
+                nonce: savedNonce // Nonceの検証をjwt.verifyに任せる
+            }, (err, decoded) => {
+                if (err) reject(err);
+                else resolve(decoded);
+            });
+        });
+    } catch (err) {
+        console.error('[JWT Verify Error]', err);
+        return res.status(401).send(`
+            <div style="color:red; font-family:sans-serif; padding:2rem;">
+                <h2>ID Token 検証エラー</h2>
+                <p>署名または Nonce の検証に失敗しました。</p>
+                <p>Error: ${err.message}</p>
+            </div>
+        `);
+    }
+
+    const claims = payload;
 
     // 表示用データの抽出
     const roleList = claims['https://purl.imsglobal.org/spec/lti/claim/roles'] || [];
     let roleLabel = '不明';
     if (roleList.some(r => r.includes('Instructor') || r.includes('Faculty'))) roleLabel = '教員';
     else if (roleList.some(r => r.includes('Learner') || r.includes('Student'))) roleLabel = '児童生徒';
+    else if (roleList.some(r => r.includes('Guest'))) roleLabel = 'ゲストユーザー';
 
     const custom = claims['https://purl.imsglobal.org/spec/lti/claim/custom'] || {};
     const grade = custom.applic_grades || '(未設定)';
     const deployId = claims['https://purl.imsglobal.org/spec/lti/claim/deployment_id'] || '-';
-    const userName = claims.name || 'No Name';
+
+    // 匿名起動の判定
+    const isAnonymous = claims.sub === 'anonymous-subject';
+    const userName = isAnonymous ? '匿名ゲスト' : (claims.name || 'No Name');
 
     // 結果表示画面 (Standard V5 Style - ICT CONNECT 21 Theme)
     res.send(`
@@ -172,6 +243,7 @@ async function handleToolLaunch(req, res) {
                 .header { background: #FFFFFF; padding: 2rem; text-align: center; border-bottom: 3px solid var(--ict-blue); }
                 h1 { margin: 0; font-size: 1.8rem; color: var(--ict-blue); font-weight: 700; }
                 .badge { display: inline-block; background: #ECFDF5; color: var(--success); padding: 4px 16px; border-radius: 9999px; font-size: 0.9rem; margin-top: 0.8rem; border: 1px solid #D1FAE5; font-weight: 600; }
+                .badge.guest { background: #F3F4F6; color: var(--text-muted); border-color: var(--border); }
 
                 .content { padding: 2rem; }
                 .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; background: #F3F4F6; padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border); }
@@ -204,7 +276,9 @@ async function handleToolLaunch(req, res) {
             <div class="container">
                 <div class="header">
                     <h1>LTI Launch Successful!</h1>
-                    <div class="badge">✓ Authentication Verified</div>
+                    <div class="badge ${isAnonymous ? 'guest' : ''}">
+                        ${isAnonymous ? '✓ Guest Session (Anonymous)' : '✓ Authentication Verified'}
+                    </div>
                 </div>
                 
                 <div class="content">
