@@ -188,46 +188,57 @@ module.exports = async (req, res) => {
     setCommonHeaders(res);
 
     try {
-        // Normalize pathname (remove trailing slash)
-        const normalizedPath = pathname.replace(/\/$/, '');
+        // Structural Route Resolution
+        // Vercel paths: /api/platform -> subpath: /
+        // Vercel paths: /api/platform/certificate -> subpath: /certificate
+        const base = '/api/platform';
+        let subpath = pathname.startsWith(base) ? pathname.slice(base.length) : pathname;
+        subpath = subpath.replace(/\/$/, '') || '/'; // Normalize trailing slash and empty case
 
-        // ルーティング
-        if (method === 'GET' && (normalizedPath === '' || normalizedPath === '/' || normalizedPath === '/api/platform')) {
-            return res.send('Platform API Ready');
-        }
-        if (method === 'POST' && normalizedPath.endsWith('/initiate')) {
-            return handleInitiate(req, res);
-        }
-        if ((method === 'GET' || method === 'POST') && normalizedPath.endsWith('/oauth/authorize')) {
-            return handleAuthorize(req, res, parsedUrl);
-        }
-        if (method === 'GET' && normalizedPath.endsWith('/jwks')) {
-            return handleJwks(req, res);
-        }
-        if (method === 'POST' && normalizedPath.endsWith('/token')) {
-            return res.json({ access_token: 'valid-mock-token', token_type: 'Bearer', expires_in: 3600 });
-        }
-        if (method === 'POST' && normalizedPath.endsWith('/check-jwks')) {
-            return handleCheckJwks(req, res);
-        }
-        // Log Retrieval API with Session ID filter
-        if (method === 'GET' && normalizedPath.endsWith('/api/logs')) {
-            const sessionId = parsedUrl.searchParams.get('sessionId');
-            const logs = await getLogsFromDb(sessionId);
-            setCommonHeaders(res);
-            return res.json(logs);
-        }
-        if (method === 'POST' && normalizedPath.endsWith('/issue-certificate')) {
-            return await handleIssueCertificate(req, res);
-        }
-        if (method === 'GET' && normalizedPath.endsWith('/certificate')) {
-            return await handleCertificate(req, res, parsedUrl);
-        }
-        if (method === 'GET' && normalizedPath.endsWith('/certificate/verify')) {
-            return await handleCertificateVerify(req, res, parsedUrl);
-        }
+        const routeKey = `${method}:${subpath}`;
 
-        return res.status(404).json({ error: 'Endpoint Not Found', path: normalizedPath });
+        switch (routeKey) {
+            case 'GET:/':
+                return res.send('Platform API Ready');
+
+            case 'POST:/initiate':
+                return handleInitiate(req, res);
+
+            case 'GET:/oauth/authorize':
+            case 'POST:/oauth/authorize':
+                return handleAuthorize(req, res, parsedUrl);
+
+            case 'GET:/jwks':
+                return handleJwks(req, res);
+
+            case 'POST:/token':
+                return res.json({ access_token: 'valid-mock-token', token_type: 'Bearer', expires_in: 3600 });
+
+            case 'POST:/check-jwks':
+                return handleCheckJwks(req, res);
+
+            case 'GET:/api/logs':
+                const sessionId = parsedUrl.searchParams.get('sessionId');
+                const logs = await getLogsFromDb(sessionId);
+                return res.json(logs);
+
+            case 'POST:/issue-certificate':
+                return await handleIssueCertificate(req, res);
+
+            case 'GET:/certificate':
+                return await handleCertificate(req, res, parsedUrl);
+
+            case 'GET:/certificate/verify':
+                return await handleCertificateVerify(req, res, parsedUrl);
+
+            default:
+                return res.status(404).json({
+                    error: 'Endpoint Not Found',
+                    path: pathname,
+                    subpath: subpath,
+                    method: method
+                });
+        }
     } catch (e) {
         console.error('[Platform] HANDLER ERROR:', e);
         if (!res.headersSent) res.status(500).json({ error: 'Internal Server Error', debug: e.message });
