@@ -1,0 +1,21 @@
+{
+    "version": 2,
+    "rewrites": [
+        {
+            "source": "/api/platform",
+            "destination": "/api/platform.js"
+        },
+        {
+            "source": "/api/platform/(.*)",
+            "destination": "/api/platform.js"
+        },
+        {
+            "source": "/api/tool",
+            "destination": "/api/tool.js"
+        },
+        {
+            "source": "/api/tool/(.*)",
+            "destination": "/api/tool.js"
+        }
+    ]
+}
