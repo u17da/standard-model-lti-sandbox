@@ -126,12 +126,20 @@ function validateLtiParams(params) {
 
 // 鍵の読み込み
 const keyDir = path.resolve(__dirname, '../keys');
-const PRIVATE_KEY = fs.existsSync(path.join(keyDir, 'private.pem'))
-    ? fs.readFileSync(path.join(keyDir, 'private.pem'), 'utf8')
-    : null;
-const PUBLIC_KEY = fs.existsSync(path.join(keyDir, 'public.pem'))
-    ? fs.readFileSync(path.join(keyDir, 'public.pem'), 'utf8')
-    : null;
+
+// 1. Priority: Environment Variables (for Vercel/Production)
+// Process escaped newlines (\n) if present in the env var
+const PRIVATE_KEY = process.env.LTI_PRIVATE_KEY
+    ? process.env.LTI_PRIVATE_KEY.replace(/\\n/g, '\n')
+    : (fs.existsSync(path.join(keyDir, 'private.pem'))
+        ? fs.readFileSync(path.join(keyDir, 'private.pem'), 'utf8')
+        : null);
+
+const PUBLIC_KEY = process.env.LTI_PUBLIC_KEY
+    ? process.env.LTI_PUBLIC_KEY.replace(/\\n/g, '\n')
+    : (fs.existsSync(path.join(keyDir, 'public.pem'))
+        ? fs.readFileSync(path.join(keyDir, 'public.pem'), 'utf8')
+        : null);
 
 // DB Helper: Log
 async function logToDb(phase, message, data, level, sessionId = null) {

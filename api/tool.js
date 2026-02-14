@@ -9,12 +9,18 @@ const path = require('path');
 
 // 鍵の読み込み (Tool固有の鍵が理想だが、テスト環境の共通鍵を使用)
 const keyDir = path.resolve(__dirname, '../keys');
-const TOOL_PRIVATE_KEY = fs.existsSync(path.join(keyDir, 'private.pem'))
-    ? fs.readFileSync(path.join(keyDir, 'private.pem'), 'utf8')
-    : null;
-const TOOL_PUBLIC_KEY = fs.existsSync(path.join(keyDir, 'public.pem'))
-    ? fs.readFileSync(path.join(keyDir, 'public.pem'), 'utf8')
-    : null;
+
+const TOOL_PRIVATE_KEY = process.env.LTI_PRIVATE_KEY
+    ? process.env.LTI_PRIVATE_KEY.replace(/\\n/g, '\n')
+    : (fs.existsSync(path.join(keyDir, 'private.pem'))
+        ? fs.readFileSync(path.join(keyDir, 'private.pem'), 'utf8')
+        : null);
+
+const TOOL_PUBLIC_KEY = process.env.LTI_PUBLIC_KEY
+    ? process.env.LTI_PUBLIC_KEY.replace(/\\n/g, '\n')
+    : (fs.existsSync(path.join(keyDir, 'public.pem'))
+        ? fs.readFileSync(path.join(keyDir, 'public.pem'), 'utf8')
+        : null);
 
 module.exports = async (req, res) => {
     const { method, url } = req;
