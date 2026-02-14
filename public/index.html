@@ -868,8 +868,11 @@
             }
         };
 
-        // Session Management
-        const sessionId = crypto.randomUUID();
+        // Session Management - Using a more compatible random generator
+        function generateId() {
+            return 's_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+        }
+        const sessionId = generateId();
         document.getElementById('session_id').value = sessionId;
 
         function fillSamples() {
@@ -935,14 +938,16 @@
             pollInterval = setInterval(async () => {
                 try {
                     const res = await fetch(`/api/platform/api/logs?sessionId=${sessionId}`);
+                    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                     const logs = await res.json();
 
-                    if (logs.length > lastLogCount) {
+                    if (logs && logs.length > lastLogCount) {
+                        console.log(`[LogPoll] Received ${logs.length - lastLogCount} new logs`);
                         renderLogs(logs.slice(lastLogCount));
                         lastLogCount = logs.length;
                     }
                 } catch (e) {
-                    console.error(e);
+                    console.error('[LogPoll Error]', e);
                 }
             }, 1000);
         }

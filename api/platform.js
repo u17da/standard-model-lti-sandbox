@@ -157,12 +157,16 @@ async function logToDb(phase, message, data, level, sessionId = null) {
 // DB Helper: Get Logs
 async function getLogsFromDb(sessionId = null) {
     try {
-        let query = db.collection('logs');
-        if (sessionId) {
-            query = query.where('sessionId', '==', sessionId);
+        // Fetch all recent logs to avoid requiring composite indexes for session filtering
+        const snapshot = await db.collection('logs').orderBy('timestamp', 'desc').limit(100).get();
+        let logs = snapshot.docs.map(doc => doc.data());
+
+        if (sessionId && sessionId !== 'null' && sessionId !== 'undefined') {
+            logs = logs.filter(l => l.sessionId === sessionId);
         }
-        const snapshot = await query.orderBy('timestamp', 'asc').limit(100).get();
-        return snapshot.docs.map(doc => doc.data());
+
+        // Return in chronological order
+        return logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     } catch (e) {
         console.error('Log Read Error:', e);
         return [];
