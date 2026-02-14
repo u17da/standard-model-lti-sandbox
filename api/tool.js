@@ -69,21 +69,14 @@ module.exports = async (req, res) => {
 /**
  * Step 1: Login Initiation 受け取り -> Step 2: Authentication Request リダイレクト
  */
-// Resolve Platform Auth URL dynamically based on the current host
-const protocol = req.headers['x-forwarded-proto'] || 'http';
-const host = req.headers.host;
-const platformAuthUrl = `${protocol}://${host}/api/platform/oauth/authorize`;
-
-const params = new URLSearchParams({
-    response_type: 'id_token',
-    scope: req.body.scope || 'openid',
+scope: req.body.scope || 'openid',
     response_mode: 'form_post',
-    client_id: req.body.client_id || 'standard-test-client',
-    redirect_uri: target_link_uri,
-    login_hint: login_hint,
-    lti_message_hint: lti_message_hint,
-    state: 'random-state-' + Date.now(),
-    nonce: 'random-nonce-' + Date.now()
+        client_id: req.body.client_id || 'standard-test-client',
+            redirect_uri: target_link_uri,
+                login_hint: login_hint,
+                    lti_message_hint: lti_message_hint,
+                        state: 'random-state-' + Date.now(),
+                            nonce: 'random-nonce-' + Date.now()
 });
 
 if (req.body.prompt) {
