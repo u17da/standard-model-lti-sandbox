@@ -188,79 +188,82 @@ module.exports = async (req, res) => {
     setCommonHeaders(res);
 
     try {
-        // ルーティング
-        if (method === 'GET' && (pathname === '/' || pathname === '/api/platform' || pathname === '/api/platform/' || pathname === '')) {
-            // UI Handler (Optional, as static files are served by server.js, but kept for fallback)
-            return res.send('Platform API Ready');
+        // Normalize pathname (remove trailing slash)
+        const normalizedPath = pathname.replace(/\/$/, '');
+
+        try {
+            // ルーティング
+            if (method === 'GET' && (normalizedPath === '' || normalizedPath === '/' || normalizedPath === '/api/platform')) {
+                return res.send('Platform API Ready');
+            }
+            if (method === 'POST' && normalizedPath.endsWith('/initiate')) {
+                return handleInitiate(req, res);
+            }
+            if ((method === 'GET' || method === 'POST') && normalizedPath.endsWith('/oauth/authorize')) {
+                return handleAuthorize(req, res, parsedUrl);
+            }
+            if (method === 'GET' && normalizedPath.endsWith('/jwks')) {
+                return handleJwks(req, res);
+            }
+            if (method === 'POST' && normalizedPath.endsWith('/token')) {
+                return res.json({ access_token: 'valid-mock-token', token_type: 'Bearer', expires_in: 3600 });
+            }
+            if (method === 'POST' && normalizedPath.endsWith('/check-jwks')) {
+                return handleCheckJwks(req, res);
+            }
+            // Log Retrieval API with Session ID filter
+            if (method === 'GET' && normalizedPath.endsWith('/api/logs')) {
+                const sessionId = parsedUrl.searchParams.get('sessionId');
+                const logs = await getLogsFromDb(sessionId);
+                setCommonHeaders(res);
+                return res.json(logs);
+            }
+            if (method === 'POST' && normalizedPath.endsWith('/issue-certificate')) {
+                return await handleIssueCertificate(req, res);
+            }
+            if (method === 'GET' && normalizedPath.endsWith('/certificate')) {
+                return await handleCertificate(req, res, parsedUrl);
+            }
+            if (method === 'GET' && normalizedPath.endsWith('/certificate/verify')) {
+                return await handleCertificateVerify(req, res, parsedUrl);
+            }
+
+            return res.status(404).json({ error: 'Endpoint Not Found', path: normalizedPath });
+        } catch (e) {
+            console.error('[Platform] HANDLER ERROR:', e);
+            if (!res.headersSent) res.status(500).json({ error: 'Internal Server Error', debug: e.message });
         }
-        if (method === 'POST' && pathname.endsWith('/initiate')) {
-            return handleInitiate(req, res);
-        }
-        if ((method === 'GET' || method === 'POST') && pathname.endsWith('/oauth/authorize')) {
-            return handleAuthorize(req, res, parsedUrl);
-        }
-        if (method === 'GET' && pathname.endsWith('/jwks')) {
-            return handleJwks(req, res);
-        }
-        if (method === 'POST' && pathname.endsWith('/token')) {
-            return res.json({ access_token: 'valid-mock-token', token_type: 'Bearer', expires_in: 3600 });
-        }
-        if (method === 'POST' && pathname.endsWith('/check-jwks')) {
-            return handleCheckJwks(req, res);
-        }
-        // Log Retrieval API with Session ID filter
-        if (pathname.endsWith('/api/logs')) {
-            const sessionId = parsedUrl.searchParams.get('sessionId');
-            const logs = await getLogsFromDb(sessionId);
-            setCommonHeaders(res);
-            return res.json(logs);
-        }
-        if (method === 'POST' && pathname.endsWith('/issue-certificate')) {
-            return await handleIssueCertificate(req, res);
-        }
-        if (method === 'GET' && pathname.endsWith('/certificate')) {
-            return await handleCertificate(req, res, parsedUrl);
-        }
-        if (method === 'GET' && pathname.endsWith('/certificate/verify')) {
-            return await handleCertificateVerify(req, res, parsedUrl);
+    };
+
+    async function handleInitiate(req, res) {
+        const { initiation_url, client_id, target_link_uri, login_hint: user_id, session_id, break_prompt, break_scope } = req.body;
+        const user = TEST_USERS.find(u => u.id === user_id) || TEST_USERS[0];
+
+        const final_iss = 'https://standard-eportal-v5.example.com';
+        const final_client_id = client_id || 'standard-test-client';
+        const login_hint = user.id;
+        const deployment_id = `S_${user.school_code}`;
+
+        const params = new URLSearchParams({
+            iss: final_iss,
+            login_hint: login_hint,
+            target_link_uri: target_link_uri,
+            lti_message_hint: JSON.stringify({ user_id: user.id, session_id }),
+            lti_deployment_id: deployment_id,
+            client_id: final_client_id,
+            scope: break_scope ? 'invalid_scope' : 'openid'
+        });
+
+        if (!break_prompt) {
+            params.set('prompt', 'none');
         }
 
-        return res.status(404).json({ error: 'Endpoint Not Found', path: pathname });
-    } catch (e) {
-        console.error('[Platform] HANDLER ERROR:', e);
-        if (!res.headersSent) res.status(500).json({ error: 'Internal Server Error', debug: e.message });
-    }
-};
+        await logToDb('PHASE_1_INIT', 'Platform -> Tool: OIDC Initiation Sent', {
+            endpoint: initiation_url,
+            params: Object.fromEntries(params)
+        }, 'INFO', session_id);
 
-async function handleInitiate(req, res) {
-    const { initiation_url, client_id, target_link_uri, login_hint: user_id, session_id, break_prompt, break_scope } = req.body;
-    const user = TEST_USERS.find(u => u.id === user_id) || TEST_USERS[0];
-
-    const final_iss = 'https://standard-eportal-v5.example.com';
-    const final_client_id = client_id || 'standard-test-client';
-    const login_hint = user.id;
-    const deployment_id = `S_${user.school_code}`;
-
-    const params = new URLSearchParams({
-        iss: final_iss,
-        login_hint: login_hint,
-        target_link_uri: target_link_uri,
-        lti_message_hint: JSON.stringify({ user_id: user.id, session_id }),
-        lti_deployment_id: deployment_id,
-        client_id: final_client_id,
-        scope: break_scope ? 'invalid_scope' : 'openid'
-    });
-
-    if (!break_prompt) {
-        params.set('prompt', 'none');
-    }
-
-    await logToDb('PHASE_1_INIT', 'Platform -> Tool: OIDC Initiation Sent', {
-        endpoint: initiation_url,
-        params: Object.fromEntries(params)
-    }, 'INFO', session_id);
-
-    return res.send(`
+        return res.send(`
         <html>
         <body onload="document.forms[0].submit()">
             <form action="${initiation_url}" method="POST">
@@ -270,32 +273,32 @@ async function handleInitiate(req, res) {
         </body>
         </html>
     `);
-}
+    }
 
-async function handleAuthorize(req, res, parsedUrl) {
-    const params = { ...Object.fromEntries(parsedUrl.searchParams), ...req.body };
-    const { state, redirect_uri, nonce, login_hint, lti_message_hint } = params;
+    async function handleAuthorize(req, res, parsedUrl) {
+        const params = { ...Object.fromEntries(parsedUrl.searchParams), ...req.body };
+        const { state, redirect_uri, nonce, login_hint, lti_message_hint } = params;
 
-    // Extract session_id from lti_message_hint if possible
-    let session_id = null;
-    try {
-        if (lti_message_hint) {
-            const hint = JSON.parse(lti_message_hint);
-            session_id = hint.session_id;
-        }
-    } catch (e) { }
+        // Extract session_id from lti_message_hint if possible
+        let session_id = null;
+        try {
+            if (lti_message_hint) {
+                const hint = JSON.parse(lti_message_hint);
+                session_id = hint.session_id;
+            }
+        } catch (e) { }
 
-    // パラメータ検証
-    const validationResults = validateLtiParams(params);
-    const hasCriticalError = validationResults.some(r => r.level === 'ERROR');
+        // パラメータ検証
+        const validationResults = validateLtiParams(params);
+        const hasCriticalError = validationResults.some(r => r.level === 'ERROR');
 
-    await logToDb('PHASE_2_AUTH_REQUEST', 'Tool -> Platform: 認証要求を受け取りました。パラメータを検証中...', {
-        received_params: params,
-        validation_results: validationResults
-    }, hasCriticalError ? 'ERROR' : (validationResults.some(r => r.level === 'WARNING') ? 'WARNING' : 'INFO'), session_id);
+        await logToDb('PHASE_2_AUTH_REQUEST', 'Tool -> Platform: 認証要求を受け取りました。パラメータを検証中...', {
+            received_params: params,
+            validation_results: validationResults
+        }, hasCriticalError ? 'ERROR' : (validationResults.some(r => r.level === 'WARNING') ? 'WARNING' : 'INFO'), session_id);
 
-    if (hasCriticalError) {
-        return res.status(400).send(`
+        if (hasCriticalError) {
+            return res.status(400).send(`
             <div style="font-family: sans-serif; padding: 2rem; color: #EF4444; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; margin: 2rem;">
                 <h2 style="margin-top:0;">LTI 起動エラー: 仕様不適合</h2>
                 <p>LTI仕様に準拠していない、または必須パラメータが欠落しているリクエストを検知したため、セキュリティ保護のため起動を中断しました。</p>
@@ -309,49 +312,49 @@ async function handleAuthorize(req, res, parsedUrl) {
                 </div>
             </div>
         `);
-    }
-
-    // ユーザー特定 (login_hint = uuid assumption for simplicity in V5)
-    const user = TEST_USERS.find(u => u.id === login_hint) || TEST_USERS[0];
-
-    const now = Math.floor(Date.now() / 1000);
-    const payload = {
-        iss: 'https://standard-eportal-v5.example.com',
-        sub: user.sub, // UUID v4
-        aud: params.client_id,
-        iat: now,
-        exp: now + 3600,
-        nonce: nonce,
-        name: user.name,
-        'https://purl.imsglobal.org/spec/lti/claim/message_type': 'LtiResourceLinkRequest',
-        'https://purl.imsglobal.org/spec/lti/claim/version': '1.3.0',
-        'https://purl.imsglobal.org/spec/lti/claim/deployment_id': `S_${user.school_code}`,
-        'https://purl.imsglobal.org/spec/lti/claim/target_link_uri': redirect_uri,
-        'https://purl.imsglobal.org/spec/lti/claim/resource_link': { id: 'resource-' + user.sub },
-        'https://purl.imsglobal.org/spec/lti/claim/roles': [user.role], // Full URL
-        'https://purl.imsglobal.org/spec/lti/claim/context': {
-            id: 'ctx-' + user.school_code,
-            label: 'STANDARD-CLASS',
-            title: 'Standard Verification Course',
-            type: ['CourseSection']
-        },
-        'https://purl.imsglobal.org/spec/lti/claim/custom': {
-            applic_grades: user.grade || ''
         }
-    };
 
-    try {
-        if (!PRIVATE_KEY) throw new Error('Private Key not loaded');
-        const idToken = jwt.sign(payload, PRIVATE_KEY, { algorithm: 'RS256', keyid: 'key-1' });
+        // ユーザー特定 (login_hint = uuid assumption for simplicity in V5)
+        const user = TEST_USERS.find(u => u.id === login_hint) || TEST_USERS[0];
 
-        await logToDb('PHASE_3_LAUNCH', 'Platform -> Tool: LTI Launch (ID Token Issued)', {
-            sub: payload.sub,
-            roles: payload['https://purl.imsglobal.org/spec/lti/claim/roles'],
-            target: redirect_uri,
-            client_id: params.client_id
-        }, 'SUCCESS', session_id);
+        const now = Math.floor(Date.now() / 1000);
+        const payload = {
+            iss: 'https://standard-eportal-v5.example.com',
+            sub: user.sub, // UUID v4
+            aud: params.client_id,
+            iat: now,
+            exp: now + 3600,
+            nonce: nonce,
+            name: user.name,
+            'https://purl.imsglobal.org/spec/lti/claim/message_type': 'LtiResourceLinkRequest',
+            'https://purl.imsglobal.org/spec/lti/claim/version': '1.3.0',
+            'https://purl.imsglobal.org/spec/lti/claim/deployment_id': `S_${user.school_code}`,
+            'https://purl.imsglobal.org/spec/lti/claim/target_link_uri': redirect_uri,
+            'https://purl.imsglobal.org/spec/lti/claim/resource_link': { id: 'resource-' + user.sub },
+            'https://purl.imsglobal.org/spec/lti/claim/roles': [user.role], // Full URL
+            'https://purl.imsglobal.org/spec/lti/claim/context': {
+                id: 'ctx-' + user.school_code,
+                label: 'STANDARD-CLASS',
+                title: 'Standard Verification Course',
+                type: ['CourseSection']
+            },
+            'https://purl.imsglobal.org/spec/lti/claim/custom': {
+                applic_grades: user.grade || ''
+            }
+        };
 
-        return res.send(`
+        try {
+            if (!PRIVATE_KEY) throw new Error('Private Key not loaded');
+            const idToken = jwt.sign(payload, PRIVATE_KEY, { algorithm: 'RS256', keyid: 'key-1' });
+
+            await logToDb('PHASE_3_LAUNCH', 'Platform -> Tool: LTI Launch (ID Token Issued)', {
+                sub: payload.sub,
+                roles: payload['https://purl.imsglobal.org/spec/lti/claim/roles'],
+                target: redirect_uri,
+                client_id: params.client_id
+            }, 'SUCCESS', session_id);
+
+            return res.send(`
             <!DOCTYPE html>
             <html>
             <body onload="document.forms[0].submit()">
@@ -362,129 +365,129 @@ async function handleAuthorize(req, res, parsedUrl) {
             </body>
             </html>
         `);
-    } catch (e) {
-        console.error('Sign Error', e);
-        await logToDb('ERROR', 'Token Generation Failed', { error: e.message }, 'ERROR');
-        return res.status(500).send('Internal Server Error: ' + e.message);
+        } catch (e) {
+            console.error('Sign Error', e);
+            await logToDb('ERROR', 'Token Generation Failed', { error: e.message }, 'ERROR');
+            return res.status(500).send('Internal Server Error: ' + e.message);
+        }
     }
-}
 
-function handleJwks(req, res) {
-    if (!PUBLIC_KEY) {
-        return res.status(500).json({ error: 'Public Key not available' });
+    function handleJwks(req, res) {
+        if (!PUBLIC_KEY) {
+            return res.status(500).json({ error: 'Public Key not available' });
+        }
+        try {
+            const publicKey = crypto.createPublicKey(PUBLIC_KEY);
+            const jwk = publicKey.export({ format: 'jwk' });
+            res.json({
+                keys: [{
+                    ...jwk,
+                    kid: 'key-1',
+                    use: 'sig',
+                    alg: 'RS256'
+                }]
+            });
+        } catch (e) {
+            console.error('JWK Export Error:', e);
+            res.status(500).json({ error: 'Failed to export JWK' });
+        }
     }
-    try {
-        const publicKey = crypto.createPublicKey(PUBLIC_KEY);
-        const jwk = publicKey.export({ format: 'jwk' });
-        res.json({
-            keys: [{
-                ...jwk,
-                kid: 'key-1',
-                use: 'sig',
-                alg: 'RS256'
-            }]
-        });
-    } catch (e) {
-        console.error('JWK Export Error:', e);
-        res.status(500).json({ error: 'Failed to export JWK' });
+
+    async function handleCheckJwks(req, res) {
+        const { jwks_uri } = req.body;
+        if (!jwks_uri) return res.status(400).json({ success: false, message: 'JWKS URI missing' });
+
+        try {
+            const response = await fetch(jwks_uri);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            if (!data.keys || !Array.isArray(data.keys)) throw new Error('Invalid JWKS format (keys not found)');
+
+            return res.json({
+                success: true,
+                message: 'JWKS Valid',
+                detail: `Found ${data.keys.length} keys.`
+            });
+        } catch (e) {
+            return res.json({
+                success: false,
+                message: 'Connection Failed',
+                detail: e.message
+            });
+        }
     }
-}
 
-async function handleCheckJwks(req, res) {
-    const { jwks_uri } = req.body;
-    if (!jwks_uri) return res.status(400).json({ success: false, message: 'JWKS URI missing' });
+    /**
+     * 証明書トークンの生成 (Platform側)
+     */
+    async function handleIssueCertificate(req, res) {
+        const { user_id, client_id, tool_url, tool_name } = req.body;
+        const user = TEST_USERS.find(u => u.id === user_id) || TEST_USERS[0];
 
-    try {
-        const response = await fetch(jwks_uri);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        if (!data.keys || !Array.isArray(data.keys)) throw new Error('Invalid JWKS format (keys not found)');
+        try {
+            if (!PRIVATE_KEY) throw new Error('Private Key not loaded');
 
-        return res.json({
-            success: true,
-            message: 'JWKS Valid',
-            detail: `Found ${data.keys.length} keys.`
-        });
-    } catch (e) {
-        return res.json({
-            success: false,
-            message: 'Connection Failed',
-            detail: e.message
-        });
+            const certPayload = {
+                iss: 'https://standard-eportal-v5.example.com',
+                sub: 'lti-interop-proof-' + Date.now(),
+                platform_name: tool_name || 'サンプルツール',
+                school_name: user.school_name || 'Standard School',
+                client_id: client_id || 'standard-test-client',
+                target_link_uri: tool_url || 'unknown',
+                deployment_id: `S_${user.school_code}`,
+                lti_version: '1.3.0',
+                standard_version: 'V5.00',
+                iat: Math.floor(Date.now() / 1000),
+                jti: 'cert-' + Math.random().toString(36).substr(2, 9)
+            };
+
+            const certToken = jwt.sign(certPayload, PRIVATE_KEY, { algorithm: 'RS256' });
+
+            // 短縮IDの生成とキャッシュ保存 (感度向上のための短縮URL用)
+            const shortId = Math.random().toString(36).substr(2, 8).toUpperCase();
+            await db.collection('certificates').doc(shortId).set({
+                token: certToken,
+                created_at: new Date().toISOString()
+            });
+
+            // Resolve platform verify URL dynamically
+            const protocol = req.headers['x-forwarded-proto'] || 'http';
+            const host = req.headers.host;
+            const platformVerifyUrl = `${protocol}://${host}/api/platform/certificate`;
+            return res.redirect(`${platformVerifyUrl}?id=${shortId}`);
+
+        } catch (e) {
+            console.error('Cert Issue Error', e);
+            return res.status(500).send('Certificate generation failed: ' + e.message);
+        }
     }
-}
 
-/**
- * 証明書トークンの生成 (Platform側)
- */
-async function handleIssueCertificate(req, res) {
-    const { user_id, client_id, tool_url, tool_name } = req.body;
-    const user = TEST_USERS.find(u => u.id === user_id) || TEST_USERS[0];
+    /**
+     * 証明書表示画面 (Platform Hosting)
+     */
+    async function handleCertificate(req, res, parsedUrl) {
+        const shortId = parsedUrl.searchParams.get('id');
+        let token = parsedUrl.searchParams.get('token');
 
-    try {
-        if (!PRIVATE_KEY) throw new Error('Private Key not loaded');
-
-        const certPayload = {
-            iss: 'https://standard-eportal-v5.example.com',
-            sub: 'lti-interop-proof-' + Date.now(),
-            platform_name: tool_name || '（非公式）相互運用標準モデル LTIテストシステム',
-            school_name: user.school_name || 'Standard School',
-            client_id: client_id || 'standard-test-client',
-            target_link_uri: tool_url || 'unknown',
-            deployment_id: `S_${user.school_code}`,
-            lti_version: '1.3.0',
-            standard_version: 'V5.00',
-            iat: Math.floor(Date.now() / 1000),
-            jti: 'cert-' + Math.random().toString(36).substr(2, 9)
-        };
-
-        const certToken = jwt.sign(certPayload, PRIVATE_KEY, { algorithm: 'RS256' });
-
-        // 短縮IDの生成とキャッシュ保存 (感度向上のための短縮URL用)
-        const shortId = Math.random().toString(36).substr(2, 8).toUpperCase();
-        await db.collection('certificates').doc(shortId).set({
-            token: certToken,
-            created_at: new Date().toISOString()
-        });
-
-        // Resolve platform verify URL dynamically
         const protocol = req.headers['x-forwarded-proto'] || 'http';
         const host = req.headers.host;
-        const platformVerifyUrl = `${protocol}://${host}/api/platform/certificate`;
-        return res.redirect(`${platformVerifyUrl}?id=${shortId}`);
 
-    } catch (e) {
-        console.error('Cert Issue Error', e);
-        return res.status(500).send('Certificate generation failed: ' + e.message);
-    }
-}
+        if (!token && shortId) {
+            const doc = await db.collection('certificates').doc(shortId).get();
+            if (doc.exists) token = doc.data().token;
+        }
 
-/**
- * 証明書表示画面 (Platform Hosting)
- */
-async function handleCertificate(req, res, parsedUrl) {
-    const shortId = parsedUrl.searchParams.get('id');
-    let token = parsedUrl.searchParams.get('token');
+        if (!token) return res.status(400).send('Certificate not found or expired');
 
-    const protocol = req.headers['x-forwarded-proto'] || 'http';
-    const host = req.headers.host;
+        try {
+            const decoded = jwt.verify(token, PUBLIC_KEY, { algorithms: ['RS256'] });
 
-    if (!token && shortId) {
-        const doc = await db.collection('certificates').doc(shortId).get();
-        if (doc.exists) token = doc.data().token;
-    }
+            // QRコード用のURL (IDがあればID優先で極限まで短くする)
+            const verifyUrl = shortId
+                ? `${protocol}://${host}/api/platform/certificate/verify?id=${shortId}`
+                : `${protocol}://${host}/api/platform/certificate/verify?token=${token}`;
 
-    if (!token) return res.status(400).send('Certificate not found or expired');
-
-    try {
-        const decoded = jwt.verify(token, PUBLIC_KEY, { algorithms: ['RS256'] });
-
-        // QRコード用のURL (IDがあればID優先で極限まで短くする)
-        const verifyUrl = shortId
-            ? `${protocol}://${host}/api/platform/certificate/verify?id=${shortId}`
-            : `${protocol}://${host}/api/platform/certificate/verify?token=${token}`;
-
-        res.send(`
+            res.send(`
             <!DOCTYPE html>
             <html lang="ja">
             <head>
@@ -557,38 +560,38 @@ async function handleCertificate(req, res, parsedUrl) {
             </body>
             </html>
         `);
-    } catch (e) {
-        res.status(401).send('Invalid certificate token: ' + e.message);
-    }
-}
-
-/**
- * 証明書検証エンドポイント (Platform Hosting)
- */
-async function handleCertificateVerify(req, res, parsedUrl) {
-    const shortId = parsedUrl.searchParams.get('id');
-    let token = parsedUrl.searchParams.get('token');
-
-    if (!token && shortId) {
-        const doc = await db.collection('certificates').doc(shortId).get();
-        if (doc.exists) token = doc.data().token;
+        } catch (e) {
+            res.status(401).send('Invalid certificate token: ' + e.message);
+        }
     }
 
-    const styleValid = 'background: #ecfdf5; border: 2px solid #10b981; color: #064e3b;';
-    const styleInvalid = 'background: #fef2f2; border: 2px solid #ef4444; color: #7f1d1d;';
+    /**
+     * 証明書検証エンドポイント (Platform Hosting)
+     */
+    async function handleCertificateVerify(req, res, parsedUrl) {
+        const shortId = parsedUrl.searchParams.get('id');
+        let token = parsedUrl.searchParams.get('token');
 
-    let statusClass = '';
-    let title = '';
-    let content = '';
-    let decoded = null;
+        if (!token && shortId) {
+            const doc = await db.collection('certificates').doc(shortId).get();
+            if (doc.exists) token = doc.data().token;
+        }
 
-    try {
-        if (!token) throw new Error(shortId ? 'Certificate ID expired or invalid' : 'Token missing');
-        decoded = jwt.verify(token, PUBLIC_KEY, { algorithms: ['RS256'] });
+        const styleValid = 'background: #ecfdf5; border: 2px solid #10b981; color: #064e3b;';
+        const styleInvalid = 'background: #fef2f2; border: 2px solid #ef4444; color: #7f1d1d;';
 
-        statusClass = styleValid;
-        title = '✅ Valid Interoperability Proof';
-        content = `
+        let statusClass = '';
+        let title = '';
+        let content = '';
+        let decoded = null;
+
+        try {
+            if (!token) throw new Error(shortId ? 'Certificate ID expired or invalid' : 'Token missing');
+            decoded = jwt.verify(token, PUBLIC_KEY, { algorithms: ['RS256'] });
+
+            statusClass = styleValid;
+            title = '✅ Valid Interoperability Proof';
+            content = `
             <div class="field">
                 <label>LTI Platform</label>
                 <div class="value">${decoded.platform_name}</div>
@@ -615,33 +618,33 @@ async function handleCertificateVerify(req, res, parsedUrl) {
             </div>
         `;
 
-        // JSON response for M2M verification
-        if (req.headers.accept && req.headers.accept.includes('application/json')) {
-            return res.json({
-                valid: true,
-                data: {
-                    platform: decoded.platform_name,
-                    school: decoded.school_name,
-                    client_id: decoded.client_id,
-                    target_link_uri: decoded.target_link_uri,
-                    deployment_id: decoded.deployment_id,
-                    issued_at: new Date(decoded.iat * 1000).toISOString()
-                }
-            });
-        }
-    } catch (e) {
-        statusClass = styleInvalid;
-        title = '❌ Invalid Certificate';
-        content = `
+            // JSON response for M2M verification
+            if (req.headers.accept && req.headers.accept.includes('application/json')) {
+                return res.json({
+                    valid: true,
+                    data: {
+                        platform: decoded.platform_name,
+                        school: decoded.school_name,
+                        client_id: decoded.client_id,
+                        target_link_uri: decoded.target_link_uri,
+                        deployment_id: decoded.deployment_id,
+                        issued_at: new Date(decoded.iat * 1000).toISOString()
+                    }
+                });
+            }
+        } catch (e) {
+            statusClass = styleInvalid;
+            title = '❌ Invalid Certificate';
+            content = `
             <p>The certificate token is invalid, expired, or tampered with.</p>
             <p class="error-detail">Error: ${e.message}</p>
         `;
-        if (req.headers.accept && req.headers.accept.includes('application/json')) {
-            return res.status(401).json({ valid: false, error: e.message });
+            if (req.headers.accept && req.headers.accept.includes('application/json')) {
+                return res.status(401).json({ valid: false, error: e.message });
+            }
         }
-    }
 
-    res.send(`
+        res.send(`
         <!DOCTYPE html>
         <html lang="ja">
         <head>
@@ -674,4 +677,4 @@ async function handleCertificateVerify(req, res, parsedUrl) {
         </body>
         </html>
     `);
-}
+    }
