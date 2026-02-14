@@ -187,6 +187,23 @@ module.exports = async (req, res) => {
     // CORS & Cache Setting
     setCommonHeaders(res);
 
+    // Response Helpers
+    res.status = (code) => { res.statusCode = code; return res; };
+    res.json = (data) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(data));
+    };
+    res.send = (data) => {
+        if (typeof data === 'object') return res.json(data);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.end(data);
+    };
+    res.redirect = (url) => {
+        res.statusCode = 302;
+        res.setHeader('Location', url);
+        res.end();
+    };
+
     try {
         // Structural Route Resolution
         // Vercel paths: /api/platform -> subpath: /
@@ -226,6 +243,7 @@ module.exports = async (req, res) => {
                 return await handleIssueCertificate(req, res);
 
             case 'GET:/certificate':
+            case 'POST:/certificate':
                 return await handleCertificate(req, res, parsedUrl);
 
             case 'GET:/certificate/verify':

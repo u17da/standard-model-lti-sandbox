@@ -30,6 +30,23 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'no-store');
 
+    // Response Helpers
+    res.status = (code) => { res.statusCode = code; return res; };
+    res.json = (data) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(data));
+    };
+    res.send = (data) => {
+        if (typeof data === 'object') return res.json(data);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.end(data);
+    };
+    res.redirect = (url) => {
+        res.statusCode = 302;
+        res.setHeader('Location', url);
+        res.end();
+    };
+
     try {
         if (method === 'POST' && pathname.endsWith('/initiate')) {
             return await handleToolInitiate(req, res);
