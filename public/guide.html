@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>利用ガイド | （非公式）相互運用標準モデル LTI接続テストツール</title>
+    <!-- Google Fonts -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700&family=Noto+Sans+JP:wght@300;400;500;700&family=Fira+Code:wght@400;600&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            /* ICT CONNECT 21 Colors */
+            --ict-blue: #005BAC;
+            --connect-orange: #F39800;
+            --bg-body: #F9FAFB;
+            --bg-card: #FFFFFF;
+            --text-main: #333333;
+            --text-muted: #666666;
+            --border: #E5E7EB;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-primary: 0 10px 15px -3px rgba(0, 91, 172, 0.2);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Noto Sans JP', sans-serif;
+            background: var(--bg-body);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        header {
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #FFFFFF;
+            border-bottom: 3px solid var(--ict-blue);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--ict-blue);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 250px 1fr;
+            gap: 2rem;
+        }
+
+        /* Sidebar Navigation */
+        aside {
+            position: sticky;
+            top: 5rem;
+            height: fit-content;
+        }
+
+        .nav-card {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: var(--shadow-card);
+        }
+
+        .nav-item {
+            display: block;
+            padding: 0.6rem 1rem;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: all 0.2s;
+            margin-bottom: 2px;
+        }
+
+        .nav-item:hover {
+            background: #F3F4F6;
+            color: var(--ict-blue);
+        }
+
+        .nav-item.active {
+            background: #EBF5FF;
+            color: var(--ict-blue);
+        }
+
+        /* Content Area */
+        main {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 3rem;
+            box-shadow: var(--shadow-card);
+        }
+
+        section {
+            margin-bottom: 4rem;
+            scroll-margin-top: 6rem;
+        }
+
+        h2 {
+            font-size: 1.8rem;
+            color: var(--ict-blue);
+            border-bottom: 2px solid #E5E7EB;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        h3 {
+            font-size: 1.3rem;
+            color: var(--text-main);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        p {
+            margin-bottom: 1.2rem;
+        }
+
+        /* Markdown-like Elements */
+        .alert {
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+            border-left: 4px solid;
+        }
+
+        .alert-note {
+            background: #F0F9FF;
+            border-color: #0EA5E9;
+            color: #0369A1;
+        }
+
+        .alert-info {
+            background: #F8FAFC;
+            border-color: var(--ict-blue);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--ict-blue);
+        }
+
+        code {
+            font-family: 'Fira Code', monospace;
+            background: #F3F4F6;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: #E11D48;
+        }
+
+        .code-block {
+            background: #111827;
+            color: #E5E7EB;
+            padding: 1.5rem;
+            border-radius: 8px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+        }
+
+        th,
+        td {
+            padding: 0.8rem 1rem;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+
+        th {
+            background: #F9FAFB;
+            font-weight: 700;
+            color: var(--ict-blue);
+        }
+
+        .feature-card {
+            border: 1px solid var(--border);
+            border-top: 4px solid var(--connect-orange);
+            padding: 1.5rem;
+            border-radius: 8px;
+            background: #FFFBF5;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }
+
+            aside {
+                display: none;
+            }
+
+            main {
+                padding: 2rem 1.5rem;
+            }
+        }
+
+        .btn-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--ict-blue);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .btn-link:hover {
+            text-decoration: underline;
+        }
+
+        .step-num {
+            display: inline-flex;
+            width: 24px;
+            height: 24px;
+            background: var(--ict-blue);
+            color: white;
+            border-radius: 50%;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>📖 利用ガイド | LTI接続テストツール</h1>
+        <a href="/" class="btn-link">← ツールに戻る</a>
+    </header>
+
+    <div class="container">
+        <aside>
+            <nav class="nav-card">
+                <a href="#overview" class="nav-item">📚 概要</a>
+                <a href="#quickstart" class="nav-item">🚀 クイックスタート</a>
+                <a href="#settings" class="nav-item">⚙️ 詳細設定マニュアル</a>
+                <a href="#diagnostic" class="nav-item">🛠️ 診断ツール (JWKS)</a>
+                <a href="#troubleshooting" class="nav-item">❓ トラブルシューティング</a>
+                <a href="#mobile" class="nav-item">📱 モバイル検証</a>
+            </nav>
+        </aside>
+
+        <main>
+            <section id="overview">
+                <h2>📚 概要</h2>
+                <p>このツールは、デジタル教科書や教材ツールが、日本の初等中等教育におけるシステム間連携のための相互運用標準モデルに準拠したLTI 1.3接続を行えるかを検証するためのサンドボックス環境です。</p>
+                <div class="feature-card">
+                    <ul style="margin:0; padding-left: 1.2rem;">
+                        <li><strong>LTI Platform シミュレーション</strong>: ツールに対してOIDCログイン開始、LTI Launchリクエストを送信します。</li>
+                        <li><strong>意図的なエラー生成</strong>: 不正なパラメータを送信し、ツール側のバリデーション動作を確認できます。</li>
+                        <li><strong>診断ツール</strong>: JWKS（公開鍵）エンドポイントの到達性確認が可能です。</li>
+                        <li><strong>接続証明書発行</strong>: 接続成功時に、設定内容を記録した証明書と検証用QRコードを発行します。</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section id="quickstart">
+                <h2>🚀 クイックスタート</h2>
+                <div class="alert alert-note">
+                    <strong>推奨環境:</strong> 通常の接続検証には、最新の安定版が動作している<strong>オンライン環境</strong>の利用を推奨します。
+                </div>
+
+                <h3><span class="step-num">1</span> サンプルツールでデモ体験</h3>
+                <p>まずは内蔵されているサンプルツールを使って、正常なLTI接続の流れを確認しましょう。</p>
+                <ol>
+                    <li>画面左上の「🧪 サンプルツールでの動作デモ」エリアにある <strong>[デモ用設定値を自動入力]</strong> をクリック。</li>
+                    <li>画面下部の <strong>[ツールを起動]</strong> をクリック。</li>
+                    <li>別ウィンドウでLTI接続が開始され、右側のログエリアに進行状況が表示されます。</li>
+                </ol>
+            </section>
+
+            <section id="settings">
+                <h2>⚙️ 詳細設定マニュアル</h2>
+                <p>自社ツールをテストする場合の設定項目です。</p>
+
+                <h3>1. 接続設定</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>項目名</th>
+                            <th>説明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Initiation URL</strong></td>
+                            <td>OIDC Login URL。ツールが最初に受け取るリクエスト先です。</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Target Link URI</strong></td>
+                            <td>認証成功後にリダイレクトされる、ツールのメイン画面（Launch URL）です。</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Client ID</strong></td>
+                            <td><code>standard-test-client</code> （固定）。</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3>2. 意図的なエラー (デバッグ用)</h3>
+                <p>ツールが不正なリクエストを正しく拒否できるかテストするためのオプションです。堅牢性テストの際に使用します。</p>
+                <ul>
+                    <li><strong>prompt=none を含めない</strong>: 仕様必須のパラメータを除外します。</li>
+                    <li><strong>scope を不正にする</strong>: <code>openid</code> 以外の値を送信します。</li>
+                </ul>
+            </section>
+
+            <section id="diagnostic">
+                <h2>🛠️ 診断ツール: JWKS Check</h2>
+                <p>LTI 1.3 では、OIDC認証のためにツールの公開鍵（JWKS）にプラットフォームからアクセスできる必要があります。</p>
+                <div class="alert alert-info">
+                    「診断ツール」エリアにJWKS URLを入力し <strong>[確認]</strong> を押すことで、プラットフォームから正しくJSONが取得できるかチェックできます。
+                </div>
+            </section>
+
+            <section id="troubleshooting">
+                <h2>❓ トラブルシューティング</h2>
+                <p>エラーが発生した際は、以下の表を参考にしてください。</p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>エラー内容</th>
+                            <th>原因と対策</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>MISSING_PROMPT</code></td>
+                            <td><strong>原因</strong>: <code>prompt=none</code> がありません。<br><strong>対策</strong>:
+                                OIDCリクエストパラメータを確認してください。</td>
+                        </tr>
+                        <tr>
+                            <td><code>WRONG_SCOPE</code></td>
+                            <td><strong>原因</strong>: <code>scope</code> が <code>openid</code>
+                                以外です。<br><strong>対策</strong>: LTI 1.3 では <code>openid</code> が必須です。</td>
+                        </tr>
+                        <tr>
+                            <td><code>JWConnection Error</code></td>
+                            <td><strong>原因</strong>: JWKS URLにアクセスできません。<br><strong>対策</strong>: 「診断ツール」で到達性を確認してください。
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section id="mobile">
+                <h2>📱 モバイル検証</h2>
+                <p>接続完了後に表示される「接続証明書」には<strong>検証用QRコード</strong>が含まれています。</p>
+                <p>スマートフォンでQRコードを読み取ることで、実機上での表示確認や、真正性の検証を簡単に行えます。</p>
+            </section>
+        </main>
+    </div>
+
+    <footer
+        style="margin-top: auto; padding: 2rem; text-align: center; color: var(--text-muted); font-size: 0.8rem; border-top: 1px solid var(--border);">
+        &copy; 2026 Standard Model LTI Sandbox
+    </footer>
+
+    <script>
+        // Smooth scroll highlighting
+        const sections = document.querySelectorAll('section');
+        const navItems = document.querySelectorAll('.nav-item');
+
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                const sectionHeight = section.clientHeight;
+                if (pageYOffset >= sectionTop - 150) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            navItems.forEach(item => {
+                item.classList.remove('active');
+                if (item.getAttribute('href').slice(1) === current) {
+                    item.classList.add('active');
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>
