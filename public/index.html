@@ -932,14 +932,18 @@
             updatePhaseDescription('INIT');
 
             // Reset log count for the new session
-            lastLogCount = 0;
-
             if (pollInterval) clearInterval(pollInterval);
+            lastLogCount = 0;
+            lastLogTimestamp = null;
 
             pollInterval = setInterval(async () => {
                 const container = document.getElementById('log-container');
                 try {
-                    const res = await fetch(`/api/platform/logs?sessionId=${sessionId}`);
+                    const url = lastLogTimestamp
+                        ? `/api/platform/logs?sessionId=${sessionId}&since=${lastLogTimestamp}`
+                        : `/api/platform/logs?sessionId=${sessionId}`;
+
+                    const res = await fetch(url);
                     if (!res.ok) {
                         const errText = await res.text();
                         console.error(`[LogPoll] HTTP ${res.status}: ${errText}`);
@@ -960,16 +964,17 @@
 
                     const logs = data.logs || [];
 
-                    if (logs.length > lastLogCount) {
-                        renderLogs(logs.slice(lastLogCount));
-                        lastLogCount = logs.length;
-                    } else if (logs.length === 0 && lastLogCount === 0) {
+                    if (logs.length > 0) {
+                        renderLogs(logs);
+                        lastLogCount += logs.length;
+                        lastLogTimestamp = data.lastTimestamp;
+                    } else if (lastLogCount === 0) {
                         // Show waiting status more clearly
-                        if (!container.innerHTML || container.innerHTML.includes('Waiting')) {
+                        if (!container.innerHTML || container.innerHTML.includes('Waiting') || container.innerHTML.includes('待機中')) {
                             container.innerHTML = `<div style="text-align:center; color: var(--text-muted); margin-top: 3rem;">
                                 <div style="font-size: 2rem; margin-bottom: 1rem;">📡</div>
                                 シーケンス開始を待機中... (Session: ${sessionId})<br>
-                                <span style="font-size: 0.8rem;">(3秒おきにチェックしています)</span>
+                                <span style="font-size: 0.8rem;">(3秒おきに新規ログをチェックしています)</span>
                             </div>`;
                         }
                     }

@@ -154,30 +154,36 @@ async function logToDb(phase, message, data, level, sessionId = null) {
     }
 }
 
-// DB Helper: Get Logs
-async function getLogsFromDb(sessionId = null) {
+// DB Helper: Get Logs (with Delta Fetch support)
+async function getLogsFromDb(sessionId = null, since = null) {
     try {
-        // Limit to 50 logs to majorly reduce Firestore read operations
-        const snapshot = await db.collection('logs')
-            .orderBy('timestamp', 'desc')
-            .limit(50)
-            .get();
+        let query = db.collection('logs').orderBy('timestamp', 'asc');
 
-        let logs = snapshot.docs.map(doc => doc.data());
-        const totalFetched = logs.length;
-
+        // Apply filters
         if (sessionId && sessionId !== 'null' && sessionId !== 'undefined') {
-            logs = logs.filter(l => l.sessionId === sessionId);
+            query = query.where('sessionId', '==', sessionId);
         }
 
-        // Return in chronological order
+        if (since && since !== 'null' && since !== 'undefined') {
+            query = query.where('timestamp', '>', since);
+        }
+
+        // Limit results to prevent accidental mass reads, though ideally this should be small
+        const snapshot = await query.limit(100).get();
+        const logs = snapshot.docs.map(doc => doc.data());
+
         return {
-            logs: logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)),
-            debug: { sessionId, totalFetched, matchedCount: logs.length }
+            logs: logs,
+            lastTimestamp: logs.length > 0 ? logs[logs.length - 1].timestamp : since,
+            unreadCount: logs.length
         };
     } catch (e) {
         console.error('Log Read Error:', e);
+        // Fallback for missing index during development or quota issues
         const isQuotaExceeded = e.message.includes('Quota exceeded') || e.code === 8;
+
+        // If it's an index error, fallback to non-composite query if possible, 
+        // but for LTI test, we usually want the proper query.
         return {
             logs: [],
             error: isQuotaExceeded ? 'DATABASE_QUOTA_EXCEEDED' : e.message,
@@ -251,7 +257,8 @@ module.exports = async (req, res) => {
 
             case 'GET:/logs':
                 const sessionId = parsedUrl.searchParams.get('sessionId') || parsedUrl.searchParams.get('session_id');
-                const logData = await getLogsFromDb(sessionId);
+                const since = parsedUrl.searchParams.get('since');
+                const logData = await getLogsFromDb(sessionId, since);
                 return res.json(logData);
 
             case 'POST:/issue-certificate':
