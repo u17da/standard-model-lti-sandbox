@@ -952,6 +952,17 @@
                     }
                     const data = await res.json();
 
+                    if (data.error && data.error !== 'DATABASE_QUOTA_EXCEEDED' && !data.isQuotaExceeded) {
+                        if (lastLogCount === 0) {
+                            container.innerHTML = `<div style="padding:1rem; background:#fff1f2; border:1px solid #fecaca; border-radius:8px; color:#991b1b;">
+                                <strong>⚠️ API Error</strong><br>
+                                ${data.error}<br>
+                                <small>${data.errorDetail || ''}</small>
+                            </div>`;
+                        }
+                        return;
+                    }
+
                     if (data.error === 'DATABASE_QUOTA_EXCEEDED' || data.isQuotaExceeded) {
                         if (lastLogCount === 0) {
                             container.innerHTML = `<div style="padding:2rem; background:#fff1f2; border:1px solid #fecaca; border-radius:8px; color:#991b1b;">

@@ -154,39 +154,44 @@ async function logToDb(phase, message, data, level, sessionId = null) {
     }
 }
 
-// DB Helper: Get Logs (with Delta Fetch support)
+// DB Helper: Get Logs (Index-free version for maximum reliability)
 async function getLogsFromDb(sessionId = null, since = null) {
     try {
-        let query = db.collection('logs').orderBy('timestamp', 'asc');
+        // Only filter by sessionId in DB to avoid composite index requirements
+        // sessionId is a single field and has an automatic index
+        let query = db.collection('logs');
 
-        // Apply filters
         if (sessionId && sessionId !== 'null' && sessionId !== 'undefined') {
             query = query.where('sessionId', '==', sessionId);
         }
 
+        // Fetch latest 100 logs for this session or overall
+        // Sorting by timestamp here also requires an index if combined with where, 
+        // so we'll fetch then sort in memory.
+        const snapshot = await query.limit(100).get();
+        let logs = snapshot.docs.map(doc => doc.data());
+
+        // Memory filtering and sorting
         if (since && since !== 'null' && since !== 'undefined') {
-            query = query.where('timestamp', '>', since);
+            logs = logs.filter(l => l.timestamp > since);
         }
 
-        // Limit results to prevent accidental mass reads, though ideally this should be small
-        const snapshot = await query.limit(100).get();
-        const logs = snapshot.docs.map(doc => doc.data());
+        // Chronological sort
+        logs.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
 
         return {
             logs: logs,
             lastTimestamp: logs.length > 0 ? logs[logs.length - 1].timestamp : since,
-            unreadCount: logs.length
+            unreadCount: logs.length,
+            serverTime: new Date().toISOString()
         };
     } catch (e) {
         console.error('Log Read Error:', e);
-        // Fallback for missing index during development or quota issues
         const isQuotaExceeded = e.message.includes('Quota exceeded') || e.code === 8;
-
-        // If it's an index error, fallback to non-composite query if possible, 
-        // but for LTI test, we usually want the proper query.
         return {
             logs: [],
             error: isQuotaExceeded ? 'DATABASE_QUOTA_EXCEEDED' : e.message,
+            errorDetail: e.stack,
             isQuotaExceeded
         };
     }
