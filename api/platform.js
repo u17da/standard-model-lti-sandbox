@@ -157,11 +157,10 @@ async function logToDb(phase, message, data, level, sessionId = null) {
 // DB Helper: Get Logs
 async function getLogsFromDb(sessionId = null) {
     try {
-        // Fetch more logs to ensure we find the session even in busy environments
-        // Ordering by timestamp desc is built-in for single-field queries in Firestore
+        // Limit to 50 logs to majorly reduce Firestore read operations
         const snapshot = await db.collection('logs')
             .orderBy('timestamp', 'desc')
-            .limit(500)
+            .limit(50)
             .get();
 
         let logs = snapshot.docs.map(doc => doc.data());
@@ -178,7 +177,12 @@ async function getLogsFromDb(sessionId = null) {
         };
     } catch (e) {
         console.error('Log Read Error:', e);
-        return { logs: [], error: e.message };
+        const isQuotaExceeded = e.message.includes('Quota exceeded') || e.code === 8;
+        return {
+            logs: [],
+            error: isQuotaExceeded ? 'DATABASE_QUOTA_EXCEEDED' : e.message,
+            isQuotaExceeded
+        };
     }
 }
 
@@ -279,8 +283,11 @@ async function handleInitiate(req, res) {
     const final_iss = 'https://standard-eportal-v5.example.com';
     const final_client_id = client_id || 'standard-test-client';
 
+    // Identify user from login_hint (which is user.id)
+    const user = TEST_USERS.find(u => u.id === user_id);
+
     // 匿名起動の判定
-    const isAnonymous = user_id === 'anonymous';
+    const isAnonymous = user_id === 'anonymous' || !user;
     const login_hint = isAnonymous ? 'anonymous-hint' : user.id;
     const deployment_id = isAnonymous ? 'S_999999999999' : `S_${user.school_code}`;
 
@@ -288,7 +295,7 @@ async function handleInitiate(req, res) {
         iss: final_iss,
         login_hint: login_hint,
         target_link_uri: target_link_uri,
-        lti_message_hint: JSON.stringify({ user_id: user.id, session_id }),
+        lti_message_hint: JSON.stringify({ user_id: isAnonymous ? 'anonymous' : user.id, session_id }),
         lti_deployment_id: deployment_id,
         client_id: final_client_id,
         scope: break_scope ? 'invalid_scope' : 'openid'

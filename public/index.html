@@ -947,6 +947,17 @@
                         return;
                     }
                     const data = await res.json();
+
+                    if (data.error === 'DATABASE_QUOTA_EXCEEDED' || data.isQuotaExceeded) {
+                        if (lastLogCount === 0) {
+                            container.innerHTML = `<div style="padding:2rem; background:#fff1f2; border:1px solid #fecaca; border-radius:8px; color:#991b1b;">
+                                <strong>⚠️ データベース読み取り制限（Quota Exceeded）</strong><br>
+                                無料枠の読取上限に達したため、現在ログを表示できません。プログラムの動作自体（LTI起動等）には影響ありませんので、そのまま検証を続けてください。
+                            </div>`;
+                        }
+                        return;
+                    }
+
                     const logs = data.logs || [];
 
                     if (logs.length > lastLogCount) {
@@ -957,7 +968,8 @@
                         if (!container.innerHTML || container.innerHTML.includes('Waiting')) {
                             container.innerHTML = `<div style="text-align:center; color: var(--text-muted); margin-top: 3rem;">
                                 <div style="font-size: 2rem; margin-bottom: 1rem;">📡</div>
-                                シーケンス開始を待機中... (Session: ${sessionId})
+                                シーケンス開始を待機中... (Session: ${sessionId})<br>
+                                <span style="font-size: 0.8rem;">(3秒おきにチェックしています)</span>
                             </div>`;
                         }
                     }
@@ -965,7 +977,7 @@
                     console.error('[LogPoll Error]', e);
                     if (lastLogCount === 0) container.innerHTML = `<div style="padding:1rem;color:#ef4444;">Network Error: ${e.message}</div>`;
                 }
-            }, 1000);
+            }, 3000);
         }
 
         const PHASE_DESC = {
