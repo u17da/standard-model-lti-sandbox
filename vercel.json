@@ -17,5 +17,10 @@
             "source": "/api/tool/(.*)",
             "destination": "/api/tool.js"
         }
-    ]
+    ],
+    "functions": {
+        "api/*.js": {
+            "includeFiles": "service-account.json"
+        }
+    }
 }
