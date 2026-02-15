@@ -200,6 +200,8 @@ async function handleToolLaunch(req, res) {
         `);
     }
 
+
+
     const claims = payload;
 
     // 表示用データの抽出

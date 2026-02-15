@@ -118,7 +118,7 @@ function validateLtiParams(params) {
     // ホワイトリスト形式での登録済み情報のチェック (Step 6)
     const REGISTERED_CLIENT_ID = 'standard-test-client';
     // redirect_uri はツール側のエンドポイント（ドメイン + パス）を検証 (Open Redirect 対策)
-    const isValidRedirect = params.redirect_uri && params.redirect_uri.includes('/api/tool/launch');
+    const isValidRedirect = params.redirect_uri && (params.redirect_uri.includes('/api/tool/launch') || params.redirect_uri.startsWith('http://localhost:3000'));
 
     check('client_id', REGISTERED_CLIENT_ID, '未登録の Client ID です。', 'MISSING_CLIENT_ID', true);
     check('login_hint', null, 'login_hint が必要です。');
