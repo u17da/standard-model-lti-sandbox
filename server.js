@@ -13,6 +13,15 @@ const PORT = process.env.PORT || 4000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Security: Json Parse Error Handling (Prevent Stack Trace Leakage)
+app.use((err, req, res, next) => {
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+        console.error('[ClientError] Malformed JSON:', err.message);
+        return res.status(400).json({ error: 'Bad Request', message: 'Invalid JSON payload' });
+    }
+    next(err);
+});
+
 // 静的ファイルの提供 (UI)
 app.use(express.static(path.join(__dirname, 'public')));
 
