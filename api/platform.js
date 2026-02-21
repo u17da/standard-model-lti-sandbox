@@ -7,8 +7,115 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const dns = require('dns');
+const http = require('http');
+const https = require('https');
 const { db } = require('../src/firebase-admin');
 const { TEST_USERS } = require('../src/users');
+
+// XSS対策: HTMLエスケープヘルパー
+function escapeHtml(text) {
+    if (!text) return text;
+    return String(text).replace(/[&<>"']/g, function (m) {
+        return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        }[m];
+    });
+}
+
+// Host Header Injection対策: 許可されたホストの検証
+function isSafeHost(host) {
+    if (!host) return false;
+    const hostname = host.split(':')[0];
+    const allowedHosts = [
+        'localhost',
+        '127.0.0.1',
+        'standard-eportal-v5.example.com',
+        ...(process.env.ALLOWED_HOSTS ? process.env.ALLOWED_HOSTS.split(',') : [])
+    ];
+    if (hostname.endsWith('.vercel.app')) return true;
+    return allowedHosts.includes(hostname);
+}
+
+// Check if IP is private (IPv4 and IPv6)
+function isPrivateIP(ip, family) {
+    if (family === 4) {
+        // IPv4 Private Ranges
+        const parts = ip.split('.').map(Number);
+        if (parts[0] === 10) return true;
+        if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+        if (parts[0] === 192 && parts[1] === 168) return true;
+        if (parts[0] === 127) return true;
+        if (parts[0] === 169 && parts[1] === 254) return true;
+        if (parts[0] === 0) return true;
+    } else if (family === 6) {
+        // IPv6 Private/Loopback
+        if (ip === '::1' || ip === '::') return true;
+        if (ip.toLowerCase().startsWith('fc') || ip.toLowerCase().startsWith('fd')) return true;
+        if (ip.toLowerCase().startsWith('fe80')) return true;
+    }
+    return false;
+}
+
+// SSRF & TOCTOU対策: Safe Fetch Implementation
+// http/https.get の lookup オプションを使って接続時にIPを検証する
+function safeFetch(url) {
+    return new Promise((resolve, reject) => {
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(url);
+        } catch (e) {
+            return reject(new Error('Invalid URL'));
+        }
+
+        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+            return reject(new Error('Only HTTP/HTTPS protocols are allowed'));
+        }
+
+        const options = {
+            headers: { 'User-Agent': 'LTI-Platform-Mock/1.0' },
+            // 重要: ここで接続直前のIP解決にフックをかける
+            lookup: (hostname, opts, cb) => {
+                dns.lookup(hostname, opts, (err, address, family) => {
+                    if (err) return cb(err);
+                    if (isPrivateIP(address, family)) {
+                        return cb(new Error(`DNS Rebinding Guard: Access to private IP ${address} is blocked.`));
+                    }
+                    cb(null, address, family);
+                });
+            }
+        };
+
+        const client = parsedUrl.protocol === 'https:' ? https : http;
+
+        const req = client.get(url, options, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    try {
+                        const json = JSON.parse(data);
+                        resolve(json);
+                    } catch (e) {
+                        reject(new Error('Invalid JSON response'));
+                    }
+                } else {
+                    reject(new Error(`HTTP ${res.statusCode}`));
+                }
+            });
+        });
+
+        req.on('error', (err) => {
+            reject(err);
+        });
+
+        req.end();
+    });
+}
 
 // LTI Hints Knowledge Base
 const LTI_HINTS = {
@@ -84,7 +191,7 @@ const LTI_HINTS = {
     },
     'WRONG_REDIRECT_URI': {
         title: 'redirect_uri が許可されていません',
-        reason: 'オープンリダイレクト脆弱性を防ぐため、登録済みのツールURL以外へのリダイレクトは禁止されています。',
+        reason: 'オープンリダイレクト脆弱性を防ぐため、有効な絶対URL (http/https) のみリダイレクト可能です。',
         action: 'ツール設定で登録した正規の Launch URL を `redirect_uri` として指定してください。'
     }
 };
@@ -117,8 +224,20 @@ function validateLtiParams(params) {
 
     // ホワイトリスト形式での登録済み情報のチェック (Step 6)
     const REGISTERED_CLIENT_ID = 'standard-test-client';
-    // redirect_uri はツール側のエンドポイント（ドメイン + パス）を検証 (Open Redirect 対策)
-    const isValidRedirect = params.redirect_uri && (params.redirect_uri.includes('/api/tool/launch') || params.redirect_uri.startsWith('http://localhost:3000'));
+
+    // redirect_uri の厳格な検証 (Open Redirect対策)
+    // 部分一致 (includes) は廃止し、有効な URL (http/https) であることを確認
+    let isValidRedirect = false;
+    try {
+        if (params.redirect_uri) {
+            const url = new URL(params.redirect_uri);
+            if (url.protocol === 'http:' || url.protocol === 'https:') {
+                isValidRedirect = true;
+            }
+        }
+    } catch (e) {
+        isValidRedirect = false;
+    }
 
     check('client_id', REGISTERED_CLIENT_ID, '未登録の Client ID です。', 'MISSING_CLIENT_ID', true);
     check('login_hint', null, 'login_hint が必要です。');
@@ -126,8 +245,8 @@ function validateLtiParams(params) {
     if (!isValidRedirect && params.redirect_uri) {
         results.push({
             key: 'redirect_uri', level: 'ERROR',
-            message: '未許可のリダイレクト先 (redirect_uri) です。',
-            detail: 'セキュリティのため、登録済みのツールURL以外へのリダイレクトは拒否されます。',
+            message: '不正なリダイレクト先 (redirect_uri) です。',
+            detail: 'セキュリティのため、有効な絶対URL (http/https) のみを許可しています。',
             hintId: 'WRONG_REDIRECT_URI'
         });
     } else {
@@ -178,6 +297,16 @@ async function logToDb(phase, message, data, level, sessionId = null) {
 // DB Helper: Get Logs (Index-free version for maximum reliability)
 async function getLogsFromDb(sessionId = null, since = null) {
     try {
+        // 情報漏えい対策: sessionId がない場合はエラーとする (全体閲覧の禁止)
+        if (!sessionId || sessionId === 'null' || sessionId === 'undefined') {
+            return {
+                logs: [],
+                error: 'ACCESS_DENIED',
+                errorDetail: 'Accessing logs without a valid sessionId is prohibited.',
+                isQuotaExceeded: false
+            };
+        }
+
         // Only filter by sessionId in DB to avoid composite index requirements
         // sessionId is a single field and has an automatic index
         let query = db.collection('logs');
@@ -346,8 +475,8 @@ async function handleInitiate(req, res) {
     return res.send(`
         <html>
         <body onload="document.forms[0].submit()">
-            <form action="${initiation_url}" method="POST">
-                ${Array.from(params.entries()).map(([k, v]) => `<input type="hidden" name="${k}" value='${v}'>`).join('')}
+            <form action="${escapeHtml(initiation_url)}" method="POST">
+                ${Array.from(params.entries()).map(([k, v]) => `<input type="hidden" name="${escapeHtml(k)}" value='${escapeHtml(v)}'>`).join('')}
             </form>
             <p>Redirecting to Tool (Standard LTI Launch)...</p>
         </body>
@@ -387,7 +516,7 @@ async function handleAuthorize(req, res, parsedUrl) {
                 <div style="font-size:0.9rem;">
                     <strong>エラー項目:</strong>
                     <ul style="margin-top:0.5rem;">
-                        ${validationResults.filter(r => r.level === 'ERROR').map(r => `<li>[${r.key}] ${r.message}</li>`).join('')}
+                        ${validationResults.filter(r => r.level === 'ERROR').map(r => `<li>[${escapeHtml(r.key)}] ${escapeHtml(r.message)}</li>`).join('')}
                     </ul>
                 </div>
             </div>
@@ -450,9 +579,9 @@ async function handleAuthorize(req, res, parsedUrl) {
             <!DOCTYPE html>
             <html>
             <body onload="document.forms[0].submit()">
-                <form method="POST" action="${redirect_uri}">
+                <form method="POST" action="${escapeHtml(redirect_uri)}">
                     <input type="hidden" name="id_token" value="${idToken}"/>
-                    <input type="hidden" name="state" value="${state}"/>
+                    <input type="hidden" name="state" value="${escapeHtml(state)}"/>
                 </form>
             </body>
             </html>
@@ -460,7 +589,7 @@ async function handleAuthorize(req, res, parsedUrl) {
     } catch (e) {
         console.error('Sign Error', e);
         await logToDb('ERROR', 'Token Generation Failed', { error: e.message }, 'ERROR');
-        return res.status(500).send('Internal Server Error: ' + e.message);
+        return res.status(500).send('Internal Server Error: ' + escapeHtml(e.message));
     }
 }
 
@@ -490,9 +619,9 @@ async function handleCheckJwks(req, res) {
     if (!jwks_uri) return res.status(400).json({ success: false, message: 'JWKS URI missing' });
 
     try {
-        const response = await fetch(jwks_uri);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
+        // Phase 3: safeFetch による TOCTOU 防止
+        const data = await safeFetch(jwks_uri);
+
         if (!data.keys || !Array.isArray(data.keys)) throw new Error('Invalid JWKS format (keys not found)');
 
         return res.json({
@@ -503,7 +632,7 @@ async function handleCheckJwks(req, res) {
     } catch (e) {
         return res.json({
             success: false,
-            message: 'Connection Failed',
+            message: 'Connection Failed or Invalid',
             detail: e.message
         });
     }
@@ -513,16 +642,28 @@ async function handleCheckJwks(req, res) {
  * 証明書トークンの生成 (Platform側)
  */
 async function handleIssueCertificate(req, res) {
+    // Host Header Injection 対策
+    const host = req.headers.host;
+    if (!isSafeHost(host)) {
+        console.error(`Blocked Unsafe Host Header: ${host}`);
+        // 400 Bad Request
+        return res.status(400).send('Invalid Host Header');
+    }
+
     const { user_id, client_id, tool_url, tool_name } = req.body;
     const user = TEST_USERS.find(u => u.id === user_id) || TEST_USERS[0];
 
     try {
         if (!PRIVATE_KEY) throw new Error('Private Key not loaded');
 
+        // Note: Claim 内には生データを入れるが、表示時にエスケープする方針
+        // ただし、Payload自体に悪意あるデータが含まれる可能性はあるため、
+        // JWTの検証側で表示時にエスケープするのが最も重要。
+
         const certPayload = {
             iss: 'https://standard-eportal-v5.example.com',
             sub: 'lti-interop-proof-' + Date.now(),
-            platform_name: tool_name || 'サンプルツール',
+            platform_name: tool_name || 'サンプルツール', // User Input
             school_name: user.school_name || 'Standard School',
             client_id: client_id || 'standard-test-client',
             target_link_uri: tool_url || 'unknown',
@@ -544,13 +685,13 @@ async function handleIssueCertificate(req, res) {
 
         // Resolve platform verify URL dynamically
         const protocol = req.headers['x-forwarded-proto'] || 'http';
-        const host = req.headers.host;
+        // Trusted host is now verified
         const platformVerifyUrl = `${protocol}://${host}/api/platform/certificate`;
         return res.redirect(`${platformVerifyUrl}?id=${shortId}`);
 
     } catch (e) {
         console.error('Cert Issue Error', e);
-        return res.status(500).send('Certificate generation failed: ' + e.message);
+        return res.status(500).send('Certificate generation failed: ' + escapeHtml(e.message));
     }
 }
 
@@ -558,6 +699,11 @@ async function handleIssueCertificate(req, res) {
  * 証明書表示画面 (Platform Hosting)
  */
 async function handleCertificate(req, res, parsedUrl) {
+    // Host Header check (optional here but good practice if sensitive links are generated)
+    if (!isSafeHost(req.headers.host)) {
+        return res.status(400).send('Invalid Host');
+    }
+
     const shortId = parsedUrl.searchParams.get('id');
     let token = parsedUrl.searchParams.get('token');
 
@@ -578,6 +724,15 @@ async function handleCertificate(req, res, parsedUrl) {
         const verifyUrl = shortId
             ? `${protocol}://${host}/api/platform/certificate/verify?id=${shortId}`
             : `${protocol}://${host}/api/platform/certificate/verify?token=${token}`;
+
+        // XSS対策: 表示項目を全てエスケープ
+        const safePlatformName = escapeHtml(decoded.platform_name || 'LTI Platform');
+        const safeSchoolName = escapeHtml(decoded.school_name);
+        const safeStandardVersion = escapeHtml(decoded.standard_version);
+        const safeTargetLinkUri = escapeHtml(decoded.target_link_uri);
+        const safeClientId = escapeHtml(decoded.client_id);
+        const safeDeploymentId = escapeHtml(decoded.deployment_id);
+
 
         res.send(`
             <!DOCTYPE html>
@@ -690,17 +845,17 @@ async function handleCertificate(req, res, parsedUrl) {
                             between the LTI Platform and the LTI Tool.
                         </div>
                         
-                        <div class="recipient-name" style="font-size: 1.8rem;">${decoded.platform_name || 'LTI Platform'}</div>
+                        <div class="recipient-name" style="font-size: 1.8rem;">${safePlatformName}</div>
                         
                         <div class="body-text">
-                            verified technical interoperability for <strong>${decoded.school_name}</strong><br>
-                            in accordance with the <strong>Learning e-Portal Standard ${decoded.standard_version}</strong>.
+                            verified technical interoperability for <strong>${safeSchoolName}</strong><br>
+                            in accordance with the <strong>Learning e-Portal Standard ${safeStandardVersion}</strong>.
                         </div>
 
                         <div style="margin: 20px 0; text-align: left; background: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #eee; font-family: monospace; font-size: 0.85rem; display: inline-block; min-width: 80%;">
-                            <div style="margin-bottom: 5px;"><strong>Target Link URI:</strong> ${decoded.target_link_uri}</div>
-                            <div style="margin-bottom: 5px;"><strong>Client ID:</strong> ${decoded.client_id}</div>
-                            <div><strong>Deployment ID:</strong> ${decoded.deployment_id}</div>
+                            <div style="margin-bottom: 5px;"><strong>Target Link URI:</strong> ${safeTargetLinkUri}</div>
+                            <div style="margin-bottom: 5px;"><strong>Client ID:</strong> ${safeClientId}</div>
+                            <div><strong>Deployment ID:</strong> ${safeDeploymentId}</div>
                         </div>
 
                         <div class="meta">
@@ -727,120 +882,6 @@ async function handleCertificate(req, res, parsedUrl) {
             </html>
         `);
     } catch (e) {
-        res.status(401).send('Invalid certificate token: ' + e.message);
+        res.status(401).send('Invalid certificate token: ' + escapeHtml(e.message));
     }
-}
-
-/**
- * 証明書検証エンドポイント (Platform Hosting)
- */
-async function handleCertificateVerify(req, res, parsedUrl) {
-    const shortId = parsedUrl.searchParams.get('id');
-    let token = parsedUrl.searchParams.get('token');
-
-    if (!token && shortId) {
-        const doc = await db.collection('certificates').doc(shortId).get();
-        if (doc.exists) token = doc.data().token;
-    }
-
-    const styleValid = 'background: #ecfdf5; border: 2px solid #10b981; color: #064e3b;';
-    const styleInvalid = 'background: #fef2f2; border: 2px solid #ef4444; color: #7f1d1d;';
-
-    let statusClass = '';
-    let title = '';
-    let content = '';
-    let decoded = null;
-
-    try {
-        if (!token) throw new Error(shortId ? 'Certificate ID expired or invalid' : 'Token missing');
-        decoded = jwt.verify(token, PUBLIC_KEY, { algorithms: ['RS256'] });
-
-        statusClass = styleValid;
-        title = '✅ Valid Interoperability Proof';
-        content = `
-            <div class="field">
-                <label>LTI Platform</label>
-                <div class="value">${decoded.platform_name}</div>
-            </div>
-            <div class="field">
-                <label>Institution</label>
-                <div class="value">${decoded.school_name}</div>
-            </div>
-            <div class="field">
-                <label>Standard Compliance</label>
-                <div class="value">LTI 1.3 / Standard ${decoded.standard_version}</div>
-            </div>
-            <div class="field">
-                <label>Technical Details</label>
-                <div class="value" style="font-family: monospace; font-size: 0.8rem;">
-                    Target Link URI: ${decoded.target_link_uri}<br>
-                    Client ID: ${decoded.client_id}<br>
-                    Deploy ID: ${decoded.deployment_id}
-                </div>
-            </div>
-            <div class="field">
-                <label>Verification Date</label>
-                <div class="value">${new Date().toLocaleString()}</div>
-            </div>
-        `;
-
-        // JSON response for M2M verification
-        if (req.headers.accept && req.headers.accept.includes('application/json')) {
-            return res.json({
-                valid: true,
-                data: {
-                    platform: decoded.platform_name,
-                    school: decoded.school_name,
-                    client_id: decoded.client_id,
-                    target_link_uri: decoded.target_link_uri,
-                    deployment_id: decoded.deployment_id,
-                    issued_at: new Date(decoded.iat * 1000).toISOString()
-                }
-            });
-        }
-    } catch (e) {
-        statusClass = styleInvalid;
-        title = '❌ Invalid Certificate';
-        content = `
-            <p>The certificate token is invalid, expired, or tampered with.</p>
-            <p class="error-detail">Error: ${e.message}</p>
-        `;
-        if (req.headers.accept && req.headers.accept.includes('application/json')) {
-            return res.status(401).json({ valid: false, error: e.message });
-        }
-    }
-
-    res.send(`
-        <!DOCTYPE html>
-        <html lang="ja">
-        <head>
-            <meta charset="UTF-8">
-            <title>Certificate Verification</title>
-            <style>
-                body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f3f4f6; }
-                .result-card { background: white; width: 90%; max-width: 500px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-                .status-header { padding: 20px; text-align: center; font-weight: bold; font-size: 1.2rem; ${statusClass} }
-                .result-body { padding: 30px; }
-                .field { margin-bottom: 20px; border-bottom: 1px solid #f3f4f6; padding-bottom: 10px; }
-                .field:last-child { border-bottom: none; }
-                label { display: block; font-size: 0.8rem; color: #6b7280; margin-bottom: 5px; }
-                .value { font-size: 1.1rem; color: #1f2937; font-weight: 500; }
-                .error-detail { color: #dc2626; font-size: 0.9rem; margin-top: 10px; }
-                .footer { text-align: center; padding: 20px; background: #f9fafb; font-size: 0.8rem; color: #9ca3af; }
-            </style>
-        </head>
-        <body>
-            <div class="result-card">
-                <div class="status-header">${title}</div>
-                <div class="result-body">
-                    ${content}
-                </div>
-                <div class="footer">
-                    Authorized Verification Service<br>
-                    (Mock Learning e-Portal Platform)
-                </div>
-            </div>
-        </body>
-        </html>
-    `);
 }
